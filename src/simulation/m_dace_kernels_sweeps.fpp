@@ -2785,17 +2785,21 @@ contains
     integer :: ext, s, e, k, l
     integer(c_size_t) :: bytes_f, bytes_a, bytes_v
     integer(c_int) :: ierr
-    integer(c_int64_t) :: e64, nv64, jd(6)
+    integer(c_int64_t) :: e64, nv64, re_e64, jd(6)
     real(c_double), allocatable, target, save :: z0(:)
     integer, save :: zbuf_rank = 0
     type(c_ptr), save :: d_zeros = c_null_ptr
     type(c_ptr) :: re_dev, rgs_dev, ridx_dev
     real(wp), pointer :: fp2(:)
-    real(wp), target :: tg2(1:2, 1:2)
-    ! the re_idx table crosses as INT32: the bridge retyped the TU's real
-    ! table from the flat helper's int(re_idx(i,q)) cast, so a real(wp)
-    ! staging here fed the kernel 1.0's bit pattern as a fluid index
-    integer(c_int), target :: tg2i(1:2, 1:2)
+    ! the (2,2) tables cross as cudaMalloc'd DEVICE buffers with explicit
+    ! H2D copies: acc_deviceptr_ on stack-local staging returns a non-NULL
+    ! HOST address (the T2.4 mechanism), which the kernel dereferenced as
+    ! device memory.  The re_idx table crosses as INT32: the bridge
+    ! retyped the TU's real table from the flat helper's int() cast, so a
+    ! real(wp) staging fed the kernel 1.0's bit pattern as a fluid index.
+    type(c_ptr), save :: d_res_tab = c_null_ptr, d_ridx_tab = c_null_ptr
+    real(c_double), target :: h_res_tab(4)
+    integer(c_int), target :: h_ridx_tab(4)
     type(c_ptr), save :: d_re_dummy = c_null_ptr, d_tab_dummy = c_null_ptr
     integer(c_size_t), save :: cap_red = 0_c_size_t, cap_tab = 0_c_size_t
     type(c_ptr), save :: d_ql = c_null_ptr, d_qr = c_null_ptr
@@ -2892,13 +2896,25 @@ contains
     ! reads) and the RE writes land in a dummy device buffer.
     call ensure_buf(d_re_dummy, cap_red, int(ext**3*2*8, c_size_t), 're_dummy')
     call ensure_buf(d_tab_dummy, cap_tab, int(4*8, c_size_t), 'tab_dummy')
+    re_e64 = merge(int(size(re_avg_rsx_vf, 1), c_int64_t), e64, &
+                   allocated(re_avg_rsx_vf))
     if (rsz1 > 0 .and. allocated(re_avg_rsx_vf) .and. allocated(res_gs) .and. allocated(re_idx)) then
       re_dev = acc_deviceptr_(c_loc(re_avg_rsx_vf(lbound(re_avg_rsx_vf, 1), &
           & lbound(re_avg_rsx_vf, 2), lbound(re_avg_rsx_vf, 3), 1)))
-      tg2 = res_gs(1:2, 1:2)
-      rgs_dev = acc_deviceptr_(c_loc(tg2(1, 1)))
-      tg2i = int(re_idx(1:2, 1:2), c_int)
-      ridx_dev = acc_deviceptr_(c_loc(tg2i(1, 1)))
+      if (.not. c_associated(d_res_tab)) then
+        ierr = cudaMalloc_(d_res_tab, 32_c_size_t)
+        call chk(ierr, 'malloc res_gs table')
+        ierr = cudaMalloc_(d_ridx_tab, 32_c_size_t)
+        call chk(ierr, 'malloc re_idx table')
+      end if
+      h_res_tab = reshape(real(res_gs(1:2, 1:2), c_double), [4])
+      ierr = cudaMemcpy_(d_res_tab, c_loc(h_res_tab), 32_c_size_t, cpH2D)
+      call chk(ierr, 'H2D res_gs table')
+      h_ridx_tab = reshape(int(re_idx(1:2, 1:2), c_int), [4])
+      ierr = cudaMemcpy_(d_ridx_tab, c_loc(h_ridx_tab), 32_c_size_t, cpH2D)
+      call chk(ierr, 'H2D re_idx table')
+      rgs_dev = d_res_tab
+      ridx_dev = d_ridx_tab
       if (re_dev == c_null_ptr .or. rgs_dev == c_null_ptr .or. ridx_dev == c_null_ptr) then
         print *, 'm_dace_kernels_sweeps: viscous arrays not device-present'
         error stop 1
@@ -2911,9 +2927,14 @@ contains
     call c_f_pointer(d_flux, d_flux_f, [nvars_l*ext**3])
     call c_f_pointer(d_fsrc, d_fsrc_f, [nvars_l*ext**3])
     call c_f_pointer(d_vsrc, d_vsrc_f, [nvels_l*ext**3])
+    ! Pack the FACE RANGE on ALL THREE axes: for y/z sweeps the face
+    ! axis lands on a different is-slot, and the x-slot pack left the low
+    ! ghost face (raw -1) of that axis unpacked — the kernel then read
+    ! uninitialized staging.  is1b-1..is1e+1 covers every direction's
+    ! cell+face+qR range on a cubic grid.
     !$acc parallel loop collapse(3) deviceptr(d_ql_f, d_qr_f)
-    do l_raw = is3b, is3e + 1
-      do k_raw = is2b, is2e + 1
+    do l_raw = is1b, is1e + 1
+      do k_raw = is1b, is1e + 1
         do u = 0, is1e + 1 - is1b
           s_raw = u + is1b
           dst_base = (s_raw + buff_size - 1) + &
@@ -2934,22 +2955,26 @@ contains
     call acc_wait_all()
     block
       character(len=32) :: dbg_env
+      character(len=1) :: dbg_dtag
       integer :: dbg_st
       integer(c_int64_t) :: dbg_n
       real(c_double), allocatable, target :: dbg_buf(:)
-      logical, save :: dumped_in = .false.
+      logical, save :: dumped_in(3) = [.false., .false., .false.]
       call get_environment_variable('MFC_SWEEPS_DUMP', dbg_env, status=dbg_st)
-      if (dbg_st == 0 .and. .not. dumped_in) then
-        dumped_in = .true.
-        dbg_n = int(nvars_l*ext**3, c_size_t)
-        allocate (dbg_buf(dbg_n))
-        ierr = cudaMemcpy_(c_loc(dbg_buf), d_ql, dbg_n*8_c_size_t, cpD2H)
-        open (10, file='/tmp/sw_ql.bin', form='unformatted', access='stream')
-        write (10) ext, nvars_l, is1b, is1e, is2b, is2e, is3b, is3e
-        write (10) dbg_buf
-        close (10)
-        deallocate (dbg_buf)
-        print *, 'SWDUMP raw: ql'
+      if (dbg_st == 0 .and. dir_in >= 1 .and. dir_in <= 3) then
+        if (.not. dumped_in(dir_in)) then
+          dumped_in(dir_in) = .true.
+          write (dbg_dtag, '(I1)') dir_in
+          dbg_n = int(nvars_l*ext**3, c_size_t)
+          allocate (dbg_buf(dbg_n))
+          ierr = cudaMemcpy_(c_loc(dbg_buf), d_ql, dbg_n*8_c_size_t, cpD2H)
+          open (10, file='/tmp/sw'//dbg_dtag//'_ql.bin', &
+                  form='unformatted', access='stream')
+          write (10) ext, nvars_l, is1b, is1e, is2b, is2e, is3b, is3e
+          write (10) dbg_buf
+          close (10)
+          print *, 'SWDUMP raw: ql dir', dir_in
+        end if
       end if
     end block
 
@@ -3022,6 +3047,9 @@ contains
       state_ext(dir_in) = ext
     end if
 
+    print *, 'SHIMDBG dir=', dir_in, ' ext=', ext, ' e64=', e64, &
+             ' re_e64=', re_e64, ' nv64=', nv64, ' jd=', jd, &
+             ' rsz=', rsz1, rsz2, ' nvels=', nvels_l, ' ext1=', ext1
     select case (dir_in)
     case (2)
       call sweeps_run_y(state_sweeps(2), &
@@ -3084,8 +3112,8 @@ contains
           & int(jd(6), c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
           & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
           & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, &
-          & e64, nv64, e64, e64, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 2_c_int64_t, 2_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
+          & e64, nv64, e64, e64, re_e64, re_e64, &
+          & re_e64, 2_c_int64_t, 2_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
           & int(rsz1, c_int), int(rsz2, c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
           & int(nvels_l, c_int64_t), e64, e64)
     case (3)
@@ -3149,8 +3177,8 @@ contains
           & int(jd(6), c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
           & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
           & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, &
-          & e64, nv64, e64, e64, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 2_c_int64_t, 2_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
+          & e64, nv64, e64, e64, re_e64, re_e64, &
+          & re_e64, 2_c_int64_t, 2_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
           & int(rsz1, c_int), int(rsz2, c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
           & int(nvels_l, c_int64_t), e64, e64)
     case default
@@ -3214,12 +3242,38 @@ contains
           & int(jd(6), c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
           & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
           & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, &
-          & e64, nv64, e64, e64, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 2_c_int64_t, 2_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
+          & e64, nv64, e64, e64, re_e64, re_e64, &
+          & re_e64, 2_c_int64_t, 2_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
           & int(rsz1, c_int), int(rsz2, c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
           & int(nvels_l, c_int64_t), e64, e64)
     end select
     ierr = cudaDeviceSynchronize_(); call chk(ierr, 'sync')
+
+    block
+      character(len=32) :: dbg_env
+      character(len=1) :: dbg_dtag
+      integer :: dbg_st
+      integer(c_int64_t) :: dbg_n
+      real(c_double), allocatable, target :: dbg_buf(:)
+      logical, save :: dumped_out(3) = [.false., .false., .false.]
+      call get_environment_variable('MFC_SWEEPS_DUMP', dbg_env, status=dbg_st)
+      if (dbg_st == 0 .and. dir_in >= 1 .and. dir_in <= 3) then
+        if (.not. dumped_out(dir_in)) then
+          dumped_out(dir_in) = .true.
+          write (dbg_dtag, '(I1)') dir_in
+          dbg_n = int(nvars_l*ext**3, c_size_t)
+          allocate (dbg_buf(dbg_n))
+          ierr = cudaMemcpy_(c_loc(dbg_buf), d_flux, dbg_n*8_c_size_t, cpD2H)
+          open (10, file='/tmp/sw'//dbg_dtag//'_fluxraw.bin', &
+                  form='unformatted', access='stream')
+          write (10) ext, nvars_l, is1b, is1e, is2b, is2e, is3b, is3e
+          write (10) dbg_buf
+          close (10)
+          deallocate (dbg_buf)
+          print *, 'SWDUMP raw: flux dir', dir_in
+        end if
+      end if
+    end block
 
     ! unpack the fluxes ON DEVICE: the kernel output for raw face s lives
     ! at 0-based s + buff_size - 1 (the pack's convention).  Descriptor-path
