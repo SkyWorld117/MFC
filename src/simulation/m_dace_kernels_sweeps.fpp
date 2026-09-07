@@ -2997,6 +2997,7 @@ contains
           ierr = cudaMemcpy_(c_loc(dbg_buf), d_qr, dbg_n*8_c_size_t, cpD2H)
           open (10, file='/tmp/sw'//dbg_dtag//'_qr.bin', &
                   form='unformatted', access='stream')
+          write (10) ext, nvars_l, is1b, is1e, is2b, is2e, is3b, is3e
           write (10) dbg_buf
           close (10)
           print *, 'SWDUMP raw: ql dir', dir_in, 'call', dbg_want2
