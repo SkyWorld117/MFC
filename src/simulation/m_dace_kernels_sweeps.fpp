@@ -2823,6 +2823,13 @@ contains
       error stop 1
     end if
 
+    ! DACE->ACC BOUNDARY SYNC: the upstream dace dispatches (pack_weno,
+    ! fdiff, conv) write the rsx/state on the dace stream; the pack below
+    ! reads on the acc stream.  Without this the pack raced them (stage 1
+    ! won by timing, stage 2 read stale/zero inputs).
+    ierr = cudaDeviceSynchronize_()
+    call chk(ierr, 'entry sync')
+
 
     ! P2/T2.3 DEVICE-RESIDENT STAGING: the Riemann rsx arrays are
     ! declare-create'd (device-resident in the OpenACC build), so the
@@ -2898,7 +2905,12 @@ contains
     call ensure_buf(d_tab_dummy, cap_tab, int(4*8, c_size_t), 'tab_dummy')
     re_e64 = merge(int(size(re_avg_rsx_vf, 1), c_int64_t), e64, &
                    allocated(re_avg_rsx_vf))
-    if (rsz1 > 0 .and. allocated(re_avg_rsx_vf) .and. allocated(res_gs) .and. allocated(re_idx)) then
+    ! re_avg is ALWAYS delivered when allocated: the Cartesian viscous
+    ! source reads Re_shear = Re_avg_rsx_vf(...) whenever viscous, even
+    ! when Re_size=(0,0) — gating on rsz left it stale for the dace
+    ! directions while the OpenACC path wrote it (the e2e catastrophe).
+    ! rsz only gates the (2,2) table reads inside the kernel helper.
+    if (allocated(re_avg_rsx_vf)) then
       re_dev = acc_deviceptr_(c_loc(re_avg_rsx_vf(lbound(re_avg_rsx_vf, 1), &
           & lbound(re_avg_rsx_vf, 2), lbound(re_avg_rsx_vf, 3), 1)))
       if (.not. c_associated(d_res_tab)) then
@@ -2959,11 +2971,20 @@ contains
       integer :: dbg_st
       integer(c_int64_t) :: dbg_n
       real(c_double), allocatable, target :: dbg_buf(:)
-      logical, save :: dumped_in(3) = [.false., .false., .false.]
+      integer, save :: dumpq_count(3) = [0, 0, 0]
+      character(len=8) :: dbg_stage2
+      integer :: dbg_want2
       call get_environment_variable('MFC_SWEEPS_DUMP', dbg_env, status=dbg_st)
-      if (dbg_st == 0 .and. dir_in >= 1 .and. dir_in <= 3) then
-        if (.not. dumped_in(dir_in)) then
-          dumped_in(dir_in) = .true.
+      call get_environment_variable('MFC_SWEEPS_DUMP_STAGE', dbg_stage2, &
+                                    status=dbg_st)
+      if (dbg_st == 0) then
+        read (dbg_stage2, *) dbg_want2
+      else
+        dbg_want2 = 1
+      end if
+      if (dir_in >= 1 .and. dir_in <= 3) then
+        dumpq_count(dir_in) = dumpq_count(dir_in) + 1
+        if (dumpq_count(dir_in) == dbg_want2) then
           write (dbg_dtag, '(I1)') dir_in
           dbg_n = int(nvars_l*ext**3, c_size_t)
           allocate (dbg_buf(dbg_n))
@@ -2973,7 +2994,7 @@ contains
           write (10) ext, nvars_l, is1b, is1e, is2b, is2e, is3b, is3e
           write (10) dbg_buf
           close (10)
-          print *, 'SWDUMP raw: ql dir', dir_in
+          print *, 'SWDUMP raw: ql dir', dir_in, 'call', dbg_want2
         end if
       end if
     end block
@@ -3255,12 +3276,22 @@ contains
       integer :: dbg_st
       integer(c_int64_t) :: dbg_n
       real(c_double), allocatable, target :: dbg_buf(:)
-      logical, save :: dumped_out(3) = [.false., .false., .false.]
+      integer, save :: dump_count(3) = [0, 0, 0]
+      character(len=8) :: dbg_stage
+      integer :: dbg_want, dbg_num
       call get_environment_variable('MFC_SWEEPS_DUMP', dbg_env, status=dbg_st)
-      if (dbg_st == 0 .and. dir_in >= 1 .and. dir_in <= 3) then
-        if (.not. dumped_out(dir_in)) then
-          dumped_out(dir_in) = .true.
+      call get_environment_variable('MFC_SWEEPS_DUMP_STAGE', dbg_stage, &
+                                    status=dbg_st)
+      if (dbg_st == 0) then
+        read (dbg_stage, *) dbg_want
+      else
+        dbg_want = 1
+      end if
+      if (dir_in >= 1 .and. dir_in <= 3) then
+        dump_count(dir_in) = dump_count(dir_in) + 1
+        if (dump_count(dir_in) == dbg_want) then
           write (dbg_dtag, '(I1)') dir_in
+          dbg_num = dump_count(dir_in)
           dbg_n = int(nvars_l*ext**3, c_size_t)
           allocate (dbg_buf(dbg_n))
           ierr = cudaMemcpy_(c_loc(dbg_buf), d_flux, dbg_n*8_c_size_t, cpD2H)
@@ -3270,7 +3301,7 @@ contains
           write (10) dbg_buf
           close (10)
           deallocate (dbg_buf)
-          print *, 'SWDUMP raw: flux dir', dir_in
+          print *, 'SWDUMP raw: flux dir', dir_in, 'call', dbg_num
         end if
       end if
     end block
@@ -3329,17 +3360,22 @@ contains
     integer :: dbg_st
     integer(c_int64_t) :: n
     real(c_double), allocatable, target :: buf(:)
-    logical, save :: dumped_arr(3) = [.false., .false., .false.]
+    integer, save :: dump_count(3) = [0, 0, 0]
+    character(len=8) :: dbg_stage
+    integer :: dbg_want, dbg_st2
 
-    call get_environment_variable('MFC_SWEEPS_DUMP', dbg_env, status=dbg_st)
-    if (dbg_st /= 0) return
-    print *, 'SWRE-enter: re_alloc=', allocated(re_avg_rsx_vf)
-    ! one-shot PER DIRECTION: the first call of each sweep (clean inputs)
-    if (dir_idx(1) >= 1 .and. dir_idx(1) <= 3) then
-      if (dumped_arr(dir_idx(1))) return
-      dumped_arr(dir_idx(1)) = .true.
+    call get_environment_variable('MFC_SWEEPS_DUMP_STAGE', dbg_stage, &
+                                  status=dbg_st2)
+    if (dbg_st2 == 0) then
+      read (dbg_stage, *) dbg_want
+    else
+      dbg_want = 1
     end if
-    write (dtag, '(I1)') dir_idx(1)
+    ! dump the dbg_want-th call per direction (stage-selectable)
+    if (dir_idx(1) >= 1 .and. dir_idx(1) <= 3) then
+      dump_count(dir_idx(1)) = dump_count(dir_idx(1)) + 1
+      if (dump_count(dir_idx(1)) /= dbg_want) return
+    end if
 
     n = int(size(flux_rsx_vf, 1), c_int64_t)*int(size(flux_rsx_vf, 2), c_int64_t)* &
         & int(size(flux_rsx_vf, 3), c_int64_t)*int(size(flux_rsx_vf, 4), c_int64_t)
