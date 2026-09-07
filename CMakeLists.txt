@@ -19,6 +19,18 @@ project(MFC LANGUAGES C CXX Fortran)
 
 option(MFC_MPI           "Build with MPI"                                     ON)
 option(MFC_OpenACC       "Build with OpenACC"                                OFF)
+option(MFC_DACE          "Build with DaCe-compiled GPU kernels (P2/T2.3)"   OFF)
+option(MFC_CASE_OPTIMIZATION "Bake case parameters at compile time (Fypp)"    False)
+set(MFC_DACE_BAKED_BUFF "2" CACHE STRING "buff_size the DaCe kernel libs were baked with")
+set(MFC_DACE_LIBS
+    "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_fdiff.so"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_conv.so"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_rk.so"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_sweeps_x.so"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_sweeps_y.so"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_sweeps_z.so"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_pack.so"
+    CACHE STRING "DaCe production kernel libraries to link")
 option(MFC_OpenMP        "Build with OpenMP"                                 OFF)
 option(MFC_GCov          "Build with GCov"                                   OFF)
 option(MFC_Unified       "Build with unified CPU & GPU memory (GH-200 only)" OFF)
