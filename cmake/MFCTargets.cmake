@@ -70,6 +70,9 @@ exit 0
         #                          six-equation relaxation kernel silently drops the
         #                          internal-energy update, leaving alpha and
         #                          alpha_rho correct and int_en zero.
+        # NOTE: do NOT put the m_dace_kernels* shims here — under the
+        # -Mextract=lib scheme every TU's procedures must be extracted into
+        # the simulation_lib directory or the link cannot resolve them.
         foreach(_no_inline_file m_start_up m_cbc m_pressure_relaxation)
             set_source_files_properties(
                 "${CMAKE_BINARY_DIR}/fypp/${ARGS_TARGET}/${_no_inline_file}.fpp.f90"
@@ -99,6 +102,31 @@ exit 0
             ${a_target} PRIVATE MFC_${CMAKE_Fortran_COMPILER_ID}
                                 MFC_${${ARGS_TARGET}_UPPER}
         )
+
+        if (MFC_DACE)
+            target_compile_definitions(${a_target} PRIVATE MFC_DACE
+                MFC_DACE_BAKED_BUFF=${MFC_DACE_BAKED_BUFF})
+            foreach(_dace_off HLLC RK CONV FDIFF)
+                option(MFC_DACE_${_dace_off}_OFF "Disable the DaCe ${_dace_off} dispatch (bisect)" OFF)
+                if (MFC_DACE_${_dace_off}_OFF)
+                    target_compile_definitions(${a_target} PRIVATE MFC_DACE_${_dace_off}_OFF)
+                endif()
+            endforeach()
+            # P2/T2.3: the DaCe-compiled production kernel libraries
+            # (pipeline/mfc_dace/libmfc_dace_*.so, built by
+            # scripts/mfc_dace_build.py) and the CUDA runtime their shims
+            # call for staging.
+            find_package(CUDAToolkit REQUIRED)
+            target_link_libraries(${a_target} PRIVATE CUDA::cudart CUDA::cuda_driver)
+            foreach(_dace_lib ${MFC_DACE_LIBS})
+                if (NOT EXISTS "${_dace_lib}")
+                    message(FATAL_ERROR "MFC_DACE: kernel library not found: ${_dace_lib} (build it with scripts/mfc_dace_build.py)")
+                endif()
+                target_link_libraries(${a_target} PRIVATE "${_dace_lib}")
+                get_filename_component(_dace_dir "${_dace_lib}" DIRECTORY)
+                target_link_options(${a_target} PRIVATE "-Wl,-rpath,${_dace_dir}")
+            endforeach()
+        endif()
 
         if (MFC_MPI AND ARGS_MPI)
             find_package(MPI COMPONENTS Fortran REQUIRED)

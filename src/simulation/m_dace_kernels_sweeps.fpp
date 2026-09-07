@@ -2710,6 +2710,18 @@ module m_dace_kernels_sweeps
     end function
   end interface
 
+  interface
+    function cu_ctx_get_current() bind(C, name='cuCtxGetCurrent')
+      use, intrinsic :: iso_c_binding, only: c_ptr
+      type(c_ptr) :: cu_ctx_get_current
+    end function
+    function cu_ctx_set_current(ctx) bind(C, name='cuCtxSetCurrent')
+      use, intrinsic :: iso_c_binding, only: c_ptr, c_int
+      integer(c_int) :: cu_ctx_set_current
+      type(c_ptr), value :: ctx
+    end function
+  end interface
+
 contains
 
   subroutine chk(ierr, what)
@@ -3022,6 +3034,14 @@ contains
     e64 = int(ext, c_int64_t)
     nv64 = int(nvars_l, c_int64_t)
 
+    ! CONTEXT PROBE: log the current CUDA context around the pack/run to
+    ! identify the acc-vs-dace context conflict.
+    block
+      type(c_ptr) :: dbg_ctx
+      dbg_ctx = cu_ctx_get_current()
+      print *, 'CTXDBG: before pack ctx =', transfer(dbg_ctx, 0_c_int64_t)
+    end block
+
     if (state_ext(dir_in) /= ext) then
       if (c_associated(state_sweeps(dir_in))) then
         select case (dir_in)
@@ -3275,6 +3295,11 @@ contains
           & int(nvels_l, c_int64_t), e64, e64)
     end select
     ierr = cudaDeviceSynchronize_(); call chk(ierr, 'sync')
+    block
+      type(c_ptr) :: dbg_ctx2
+      dbg_ctx2 = cu_ctx_get_current()
+      print *, 'CTXDBG: after run ctx =', transfer(dbg_ctx2, 0_c_int64_t)
+    end block
 
     block
       character(len=32) :: dbg_env
