@@ -2802,6 +2802,8 @@ contains
     integer, save :: zbuf_rank = 0
     type(c_ptr), save :: d_zeros = c_null_ptr
     type(c_ptr) :: re_dev, rgs_dev, ridx_dev
+    character(len=32) :: dbg_env
+    integer :: dbg_st
     real(wp), pointer :: fp2(:)
     ! the (2,2) tables cross as cudaMalloc'd DEVICE buffers with explicit
     ! H2D copies: acc_deviceptr_ on stack-local staging returns a non-NULL
@@ -2956,6 +2958,35 @@ contains
     ! ghost face (raw -1) of that axis unpacked — the kernel then read
     ! uninitialized staging.  is1b-1..is1e+1 covers every direction's
     ! cell+face+qR range on a cubic grid.
+    ! MFC_DACE_SKIP_PACK=1: bypass the acc pack and H2D the known-good
+    ! dump bytes instead — splits "the acc pack" from "the MFC process
+    ! environment" as the dust's cause.
+    call get_environment_variable('MFC_DACE_SKIP_PACK', dbg_env, status=dbg_st)
+    if (dbg_st == 0) then
+      block
+        integer(c_size_t) :: skip_bytes
+        integer :: skip_fd, skip_ios
+        real(c_double), allocatable, target :: skip_buf(:)
+        skip_bytes = int(nvars_l*ext**3, c_size_t)*8_c_size_t
+        allocate (skip_buf(nvars_l*ext**3))
+        open (newunit=skip_fd, file='/tmp/rda/sw1_ql.bin', access='stream', &
+                status='old', iostat=skip_ios)
+        if (skip_ios == 0) then
+          read (skip_fd, pos=33) skip_buf
+          close (skip_fd)
+          ierr = cudaMemcpy_(d_ql, c_loc(skip_buf(1)), skip_bytes, cpH2D)
+          call chk(ierr, 'skip-pack H2D ql')
+          open (newunit=skip_fd, file='/tmp/rda/sw1_qr.bin', access='stream', &
+                  status='old', iostat=skip_ios)
+          read (skip_fd) skip_buf
+          close (skip_fd)
+          ierr = cudaMemcpy_(d_qr, c_loc(skip_buf(1)), skip_bytes, cpH2D)
+          call chk(ierr, 'skip-pack H2D qr')
+          print *, 'SKIP_PACK: the known-good inputs H2D''d'
+        end if
+        deallocate (skip_buf)
+      end block
+    else
     !$acc parallel loop collapse(3) deviceptr(d_ql_f, d_qr_f)
     do l_raw = is1b, is1e + 1
       do k_raw = is1b, is1e + 1
@@ -2976,6 +3007,7 @@ contains
       end do
     end do
     !$acc end parallel loop
+    end if
     call acc_wait_all()
     block
       character(len=32) :: dbg_env
@@ -3097,6 +3129,56 @@ contains
     print *, 'SHIMDBG dir=', dir_in, ' ext=', ext, ' e64=', e64, &
              ' re_e64=', re_e64, ' nv64=', nv64, ' jd=', jd, &
              ' rsz=', rsz1, rsz2, ' nvels=', nvels_l, ' ext1=', ext1
+    call get_environment_variable('MFC_DACE_D2D_FLUX', dbg_env, status=dbg_st)
+    if (dbg_st == 0) then
+      block
+        integer(c_size_t) :: d2d_bytes
+        integer :: d2d_fd, d2d_ios
+        real(c_double), allocatable, target :: d2d_buf(:)
+        integer :: d2d_i
+        d2d_bytes = int(nvars_l*ext**3, c_size_t)*8_c_size_t
+        allocate (d2d_buf(nvars_l*ext**3))
+        open (newunit=d2d_fd, file=trim(dbg_env), access='stream', &
+                status='old', iostat=d2d_ios)
+        read (d2d_fd) d2d_buf
+        close (d2d_fd)
+        ! write via the ACC context (the unpack reads from it): the runtime-API
+        ! H2D = the primary = the cross-context staleness suspect
+        call c_f_pointer(d_flux, d_flux_f, [nvars_l*ext**3])
+        !$acc parallel loop deviceptr(d_flux_f)
+        do d2d_i = 0, nvars_l*ext**3 - 1
+          d_flux_f(d2d_i + 1) = d2d_buf(d2d_i + 1)
+        end do
+        !$acc end parallel loop
+        open (newunit=d2d_fd, file=trim(dbg_env)//'.fsrc', access='stream', &
+                status='old', iostat=d2d_ios)
+        if (d2d_ios == 0) then
+          read (d2d_fd) d2d_buf
+          close (d2d_fd)
+          call c_f_pointer(d_fsrc, d_fsrc_f, [nvars_l*ext**3])
+          !$acc parallel loop deviceptr(d_fsrc_f)
+          do d2d_i = 0, nvars_l*ext**3 - 1
+            d_fsrc_f(d2d_i + 1) = d2d_buf(d2d_i + 1)
+          end do
+          !$acc end parallel loop
+        end if
+        open (newunit=d2d_fd, file=trim(dbg_env)//'.vsrc', access='stream', &
+                status='old', iostat=d2d_ios)
+        if (d2d_ios == 0) then
+          read (d2d_fd) d2d_buf(1:nvels_l*ext**3)
+          close (d2d_fd)
+          call c_f_pointer(d_vsrc, d_vsrc_f, [nvels_l*ext**3])
+          !$acc parallel loop deviceptr(d_vsrc_f)
+          do d2d_i = 0, nvels_l*ext**3 - 1
+            d_vsrc_f(d2d_i + 1) = d2d_buf(d2d_i + 1)
+          end do
+          !$acc end parallel loop
+        end if
+        deallocate (d2d_buf)
+      end block
+      print *, 'D2D_FLUX: the known-correct flux H2D''d, the dace run SKIPPED'
+      ierr = cudaDeviceSynchronize_(); call chk(ierr, 'sync')
+    else
     select case (dir_in)
     case (2)
       call sweeps_run_y(state_sweeps(2), &
@@ -3294,6 +3376,7 @@ contains
           & int(rsz1, c_int), int(rsz2, c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
           & int(nvels_l, c_int64_t), e64, e64)
     end select
+    end if
     ierr = cudaDeviceSynchronize_(); call chk(ierr, 'sync')
     block
       type(c_ptr) :: dbg_ctx2
