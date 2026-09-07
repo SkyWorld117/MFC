@@ -14,6 +14,9 @@ module m_viscous
 
     use m_derived_types
     use m_global_parameters
+#if defined(MFC_DACE)
+    use m_dace_kernels, only: s_dace_fd_gradient
+#endif
     use m_weno
     use m_muscl
     use m_helper
@@ -679,10 +682,27 @@ contains
                         end do
                         $:END_GPU_PARALLEL_LOOP()
 
+                        #if defined(MFC_DACE) && !defined(MFC_DACE_FDIFF_OFF)
+                        ! P2/T2.3: the DaCe-compiled fused fd-gradient kernel
+                        ! (device-resident, casopt-baked 5-eq/2-fluid/3-D,
+                        ! buff_size=2).  Covers the same interior stencil as
+                        ! the three s_compute_fd_gradient GPU loops, fused
+                        ! over the iv field range, one launch instead of
+                        ! iv%end-iv%beg+1.  The shim stages DEVICE-RESIDENT:
+                        ! it transposes the declare-created device fields
+                        ! straight into the kernel's flat staging buffers with
+                        ! acc kernels — no host staging, no acc update here.
+                        call s_dace_fd_gradient(q_prim_qp%vf(iv%beg:iv%end), &
+                                                & dq_prim_dx_qp(1)%vf(iv%beg:iv%end), &
+                                                & dq_prim_dy_qp(1)%vf(iv%beg:iv%end), &
+                                                & dq_prim_dz_qp(1)%vf(iv%beg:iv%end), &
+                                                & iv%end - iv%beg + 1)
+                        #else
                         do i = iv%beg, iv%end
                             call s_compute_fd_gradient(q_prim_qp%vf(i), dq_prim_dx_qp(1)%vf(i), dq_prim_dy_qp(1)%vf(i), &
                                                        & dq_prim_dz_qp(1)%vf(i))
                         end do
+                        #endif
                     #:endif
                 else
                     do i = iv%beg, iv%end

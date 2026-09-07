@@ -20,7 +20,7 @@ module m_riemann_state
     !! direct evaluation of source terms, by using the left and right states given in qK_prim_rs_vf, dqK_prim_ds_vf where ds = dx,
     !! dy or dz.
     !> @{
-    real(wp), allocatable, dimension(:,:,:,:) :: flux_rsx_vf, flux_src_rsx_vf
+    real(wp), allocatable, target, dimension(:,:,:,:), public :: flux_rsx_vf, flux_src_rsx_vf
     $:GPU_DECLARE(create='[flux_rsx_vf, flux_src_rsx_vf]')
     !> @}
 
@@ -48,7 +48,7 @@ module m_riemann_state
 
     ! Cell-boundary velocity from Riemann solution; used for source flux
 
-    real(wp), allocatable, dimension(:,:,:,:) :: vel_src_rsx_vf
+    real(wp), allocatable, target, dimension(:,:,:,:), public :: vel_src_rsx_vf
     $:GPU_DECLARE(create='[vel_src_rsx_vf]')
 
     real(wp), allocatable, dimension(:,:,:,:) :: mom_sp_rsx_vf

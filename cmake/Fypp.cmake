@@ -117,7 +117,8 @@ macro(HANDLE_SOURCES target useCommon)
                                  -D MFC_${CMAKE_Fortran_COMPILER_ID}
                                  -D MFC_${${target}_UPPER}
                                  -D MFC_COMPILER="${CMAKE_Fortran_COMPILER_ID}"
-				                 -D MFC_CASE_OPTIMIZATION=False
+				                 -D MFC_CASE_OPTIMIZATION=$<IF:$<BOOL:${MFC_CASE_OPTIMIZATION}>,True,False>
+				                 -D MFC_DACE=$<IF:$<BOOL:${MFC_DACE}>,True,False>
                                  -D chemistry=False
                                  --line-numbering
                                  --no-folding

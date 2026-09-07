@@ -11,6 +11,9 @@ module m_time_steppers
     use m_derived_types
     use m_global_parameters
     use m_rhs
+#if defined(MFC_DACE)
+    use m_dace_kernels_rk, only: s_dace_rk_stage
+#endif
     use m_chemistry
     use m_reactive_burn, only: s_reactive_burn_substep
     use m_pressure_relaxation
@@ -33,9 +36,9 @@ module m_time_steppers
 
     implicit none
 
-    type(vector_field), allocatable, dimension(:)    :: q_cons_ts  !< Cell-average conservative variables at each time-stage (TS)
+    type(vector_field), allocatable, dimension(:), public :: q_cons_ts  !< Cell-average conservative variables at each time-stage (TS)
     type(scalar_field), allocatable, dimension(:)    :: q_prim_vf  !< Cell-average primitive variables at the current time-stage
-    type(scalar_field), allocatable, dimension(:)    :: rhs_vf     !< Cell-average RHS variables at the current time-stage
+    type(scalar_field), allocatable, dimension(:), public :: rhs_vf     !< Cell-average RHS variables at the current time-stage
     type(integer_field), allocatable, dimension(:,:) :: bc_type    !< Boundary condition identifiers
     !> Cell-average primitive variables at consecutive TIMESTEPS
     type(vector_field), allocatable, dimension(:) :: q_prim_ts1, q_prim_ts2
@@ -44,7 +47,7 @@ module m_time_steppers
     real(wp), allocatable, dimension(:,:,:,:,:)   :: rhs_mv
     integer, private                              :: num_ts  !< Number of time stages in the time-stepping scheme
     integer                                       :: stor    !< storage index
-    real(wp), allocatable, dimension(:,:)         :: rk_coef
+    real(wp), allocatable, dimension(:,:), public :: rk_coef
     integer, private                              :: num_probe_ts
 
     $:GPU_DECLARE(create='[q_cons_ts, q_prim_vf, q_T_sf, rhs_vf, q_prim_ts1, q_prim_ts2, rhs_mv, rhs_pb, rk_coef, stor, bc_type]')
@@ -490,6 +493,15 @@ contains
             end if
 
             if (bubbles_lagrange .and. .not. adap_dt) call s_update_lagrange_tdv_rk(q_prim_vf, bc_type, stage=s)
+            #if defined(MFC_DACE) && !defined(MFC_DACE_RK_OFF)
+            ! P2/T2.3: the DaCe-compiled RK-stage kernel (device-resident,
+            ! casopt-baked 5-eq/2-fluid/3-D, dt by value).  One launch
+            ! replaces the collapsed(4) stage-combination loop.  The shim
+            ! stages DEVICE-RESIDENT: acc-kernel transposes between the
+            ! declare-created device fields and the kernel's flat buffers —
+            ! no host staging, no acc update here.
+            call s_dace_rk_stage(s, rk_coef, q_cons_ts, rhs_vf, stor, sys_size)
+            #else
             $:GPU_PARALLEL_LOOP(collapse=4)
             do i = 1, sys_size
                 do l = 0, p
@@ -512,6 +524,7 @@ contains
                 end do
             end do
             $:END_GPU_PARALLEL_LOOP()
+            #endif
             ! Evolve pb and mv for non-polytropic qbmm
             if (qbmm .and. (.not. polytropic)) then
                 $:GPU_PARALLEL_LOOP(collapse=5)
