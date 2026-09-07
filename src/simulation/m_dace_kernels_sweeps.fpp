@@ -2994,6 +2994,11 @@ contains
           write (10) ext, nvars_l, is1b, is1e, is2b, is2e, is3b, is3e
           write (10) dbg_buf
           close (10)
+          ierr = cudaMemcpy_(c_loc(dbg_buf), d_qr, dbg_n*8_c_size_t, cpD2H)
+          open (10, file='/tmp/sw'//dbg_dtag//'_qr.bin', &
+                  form='unformatted', access='stream')
+          write (10) dbg_buf
+          close (10)
           print *, 'SWDUMP raw: ql dir', dir_in, 'call', dbg_want2
         end if
       end if
@@ -3360,29 +3365,31 @@ contains
     integer :: dbg_st
     integer(c_int64_t) :: n
     real(c_double), allocatable, target :: buf(:)
-    integer, save :: dump_count(3) = [0, 0, 0]
+    integer, save :: gdump = 0
     character(len=8) :: dbg_stage
-    integer :: dbg_want, dbg_st2
+    character(len=6) :: cnum
+    integer :: dbg_max, dbg_st2
 
-    call get_environment_variable('MFC_SWEEPS_DUMP_STAGE', dbg_stage, &
+    call get_environment_variable('MFC_SWEEPS_DUMP_MAX', dbg_stage, &
                                   status=dbg_st2)
     if (dbg_st2 == 0) then
-      read (dbg_stage, *) dbg_want
+      read (dbg_stage, *) dbg_max
     else
-      dbg_want = 1
+      dbg_max = 3
     end if
-    ! dump the dbg_want-th call per direction (stage-selectable)
-    if (dir_idx(1) >= 1 .and. dir_idx(1) <= 3) then
-      dump_count(dir_idx(1)) = dump_count(dir_idx(1)) + 1
-      if (dump_count(dir_idx(1)) /= dbg_want) return
-    end if
+    ! dump the first dbg_max CALLS with a global counter in the filename
+    ! (the call order is x,y,z per RK stage, so N mod 3 gives the dir;
+    ! dir_idx proved unreliable in the capture context)
+    gdump = gdump + 1
+    if (gdump > dbg_max) return
+    write (cnum, '(I6.6)') gdump
 
     n = int(size(flux_rsx_vf, 1), c_int64_t)*int(size(flux_rsx_vf, 2), c_int64_t)* &
         & int(size(flux_rsx_vf, 3), c_int64_t)*int(size(flux_rsx_vf, 4), c_int64_t)
     allocate (buf(n))
     !$acc update host(flux_rsx_vf)
     buf(1:n) = reshape(flux_rsx_vf, [int(n)])
-    open (10, file='/tmp/sw'//trim(dtag)//'_flux'//trim(tag)//'.bin', form='unformatted', access='stream')
+    open (10, file='/tmp/sweepdump_'//cnum//'_'//trim(tag)//'_flux.bin', form='unformatted', access='stream')
     write (10) size(flux_rsx_vf, 1), size(flux_rsx_vf, 4), is1%beg, is1%end, is2%beg, is2%end, is3%beg, is3%end
     write (10) buf
     close (10)
@@ -3393,7 +3400,7 @@ contains
     allocate (buf(n))
     !$acc update host(flux_src_rsx_vf)
     buf(1:n) = reshape(flux_src_rsx_vf, [int(n)])
-    open (10, file='/tmp/sw'//trim(dtag)//'_fsrc'//trim(tag)//'.bin', form='unformatted', access='stream')
+    open (10, file='/tmp/sweepdump_'//cnum//'_'//trim(tag)//'_fsrc.bin', form='unformatted', access='stream')
     write (10) size(flux_src_rsx_vf, 1), size(flux_src_rsx_vf, 4), is1%beg, is1%end, is2%beg, is2%end, is3%beg, is3%end
     write (10) buf
     close (10)
@@ -3404,7 +3411,7 @@ contains
     allocate (buf(n))
     !$acc update host(vel_src_rsx_vf)
     buf(1:n) = reshape(vel_src_rsx_vf, [int(n)])
-    open (10, file='/tmp/sw'//trim(dtag)//'_vsrc'//trim(tag)//'.bin', form='unformatted', access='stream')
+    open (10, file='/tmp/sweepdump_'//cnum//'_'//trim(tag)//'_vsrc.bin', form='unformatted', access='stream')
     write (10) size(vel_src_rsx_vf, 1), size(vel_src_rsx_vf, 4), is1%beg, is1%end, is2%beg, is2%end, is3%beg, is3%end
     write (10) buf
     close (10)
@@ -3420,13 +3427,14 @@ contains
       allocate (buf(n))
       !$acc update host(re_avg_rsx_vf)
       buf(1:n) = reshape(re_avg_rsx_vf, [int(n)])
-      open (10, file='/tmp/sw'//trim(dtag)//'_re'//trim(tag)//'.bin', form='unformatted', access='stream')
+      open (10, file='/tmp/sweepdump_'//cnum//'_'//trim(tag)//'_re.bin', form='unformatted', access='stream')
       write (10) size(re_avg_rsx_vf, 1), size(re_avg_rsx_vf, 4), is1%beg, is1%end, is2%beg, is2%end, is3%beg, is3%end
       write (10) buf
       close (10)
       deallocate (buf)
     end if
-    print *, 'SWDUMP rsx outputs: tag=', trim(tag)
+
+    print *, 'SWDUMP call', gdump, 'tag=', trim(tag)
   end subroutine s_dace_hllc_dump
 
   !> Capture-mode entry: dump the OpenACC reference rsx outputs that the
