@@ -80,6 +80,17 @@ exit 0
                 PROPERTIES COMPILE_OPTIONS "-Mnoinline"
             )
         endforeach()
+        # The dace shims: plain host loops inside them (e.g. the sweeps
+        # unpack permute) silently no-op under full IPO - a 376-arg routine
+        # is far past the inliner's sane envelope.  Keep the extract (the
+        # link requires it) but drop cross-file inlining.
+        foreach(_dace_noinline_file m_dace_kernels_sweeps)
+            set_source_files_properties(
+                "${CMAKE_BINARY_DIR}/fypp/${ARGS_TARGET}/${_dace_noinline_file}.fpp.f90"
+                TARGET_DIRECTORY ${ARGS_TARGET}
+                PROPERTIES COMPILE_OPTIONS "-Mnoinline"
+            )
+        endforeach()
 
         list(PREPEND IPO_TARGETS ${ARGS_TARGET}_lib)
     endif()
@@ -106,7 +117,7 @@ exit 0
         if (MFC_DACE)
             target_compile_definitions(${a_target} PRIVATE MFC_DACE
                 MFC_DACE_BAKED_BUFF=${MFC_DACE_BAKED_BUFF})
-            foreach(_dace_off HLLC RK CONV FDIFF)
+            foreach(_dace_off HLLC RK CONV FDIFF WENO)
                 option(MFC_DACE_${_dace_off}_OFF "Disable the DaCe ${_dace_off} dispatch (bisect)" OFF)
                 if (MFC_DACE_${_dace_off}_OFF)
                     target_compile_definitions(${a_target} PRIVATE MFC_DACE_${_dace_off}_OFF)

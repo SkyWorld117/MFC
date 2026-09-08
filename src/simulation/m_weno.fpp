@@ -912,6 +912,10 @@ contains
     !> Perform WENO reconstruction of left and right cell-boundary values from cell-averaged variables
     subroutine s_weno(v_vf, vL_rs_vf_x, vR_rs_vf_x, weno_dir, is1_weno_d, is2_weno_d, is3_weno_d)
 
+#if defined(MFC_DACE)
+        use m_dace_kernels_weno, only: s_dace_weno_x, weno_dace_contract, &
+                                       & weno_dace_mode, weno_dace_dirs
+#endif
         type(scalar_field), dimension(1:), intent(in)                                          :: v_vf
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vL_rs_vf_x
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vR_rs_vf_x
@@ -1093,6 +1097,24 @@ contains
                     #:set SV = STENCIL_VAR
                     #:set SF = lambda offs: COORDS.format(STENCIL_IDX = SV + offs)
                     if (weno_dir == ${WENO_DIR}$) then
+#if defined(MFC_DACE) && !defined(MFC_DACE_WENO_OFF)
+                        if (weno_dace_dirs(${WENO_DIR}$) .and. &
+                            & weno_dace_mode() >= 1 .and. weno_dace_contract() .and. &
+                            & v_size == 8 .and. &
+                            & uniform_grid(${WENO_DIR}$) .and. is1_weno%beg == 0 .and. &
+                            & is2_weno%beg == 0 .and. is3_weno%beg == 0) then
+                            call s_dace_weno_x(v_rs_weno, poly_coef_cbL_${XYZ}$, poly_coef_cbR_${XYZ}$, &
+                                               & d_cbL_${XYZ}$, d_cbR_${XYZ}$, vL_rs_vf_x, vR_rs_vf_x, &
+                                               & is1_weno%end)
+                        end if
+                        if (.not. (weno_dace_dirs(${WENO_DIR}$) .and. &
+                                   & weno_dace_mode() == 1 .and. weno_dace_contract() .and. &
+                                   & v_size == 8 .and. &
+                                   & uniform_grid(${WENO_DIR}$) .and. is1_weno%beg == 0 .and. &
+                                   & is2_weno%beg == 0 .and. is3_weno%beg == 0)) then
+#else
+                        if (.true.) then
+#endif
                         $:GPU_PARALLEL_LOOP(collapse=3,private='[dvd, poly, beta, alpha, omega, tau, delta, q, vp0, vm1, vm2, &
                                             & vp1, vp2]')
                         do l = ${Z_BND}$%beg, ${Z_BND}$%end
@@ -1235,6 +1257,7 @@ contains
                             end do
                         end do
                         $:END_GPU_PARALLEL_LOOP()
+                        end if
 
                         if (mp_weno) then
                             call s_preserve_monotonicity(v_rs_weno, vL_rs_vf_x, vR_rs_vf_x, weno_dir)
