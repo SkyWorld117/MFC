@@ -2722,6 +2722,21 @@ module m_dace_kernels_sweeps
     end function
   end interface
 
+  !> Unpack geometry shared between the shim routine and the on-device
+  !! unpack kernels. Stored in a HEAP allocation (not module statics, not stack locals, not
+  !! call arguments): the dace init/run calls and the shim's own large print
+  !! statements have each been observed corrupting one or more of those
+  !! (is3b/is3e dummies, svs* locals, 8th/9th argument slots), while the
+  !! heap has survived every corruption event.  The stash is written once,
+  !! immediately after the kernel loop bounds jd are computed, before any
+  !! init call, print, or the dace run itself.
+  !! Layout: 1-6 = jd (kernel/packed axis bounds, sweep-local);
+  !! 7 = rsx lbound; 8-10 = rsx extents; 11 = rsx eqn stride;
+  !! 12 = packed extent; 13 = buff_size; 14 = fsrc eqn offset;
+  !! 15-17 = nvars_l, nadv_l, nvels_l; 18 = dir.
+  integer, parameter :: uperm_gn = 18
+  integer, allocatable, target :: uperm_geom(:)
+
 contains
 
   subroutine chk(ierr, what)
@@ -2788,8 +2803,13 @@ contains
     ! positions numerically on a cubic grid.
     integer, intent(in) :: dir_in
 
-    real(c_double), pointer :: d_ql_f(:), d_qr_f(:), d_flux_f(:)
-    real(c_double), pointer :: d_fsrc_f(:), d_vsrc_f(:)
+    real(c_double), pointer :: d_ql_f(:), d_qr_f(:)
+    character(len=32) :: dbg_env
+    integer :: dbg_st
+    integer :: j1b, j1e, j2b, j2e, j3b, j3e
+    integer :: lbv, n1v, n2v, estv, extv, bufv, eoffv, nrowsv
+    real(c_double), pointer :: pk_f(:), rs_f(:)
+    type(c_ptr) :: flux_dev, fsrc_dev, vsrc_dev
     integer :: src_base, dst_base, exto1, exto2, exto3
     integer :: s_raw, k_raw, l_raw, u, v, w
     real(c_double), allocatable, target :: gbuf(:), pbuf(:), vbuf(:)
@@ -2802,8 +2822,6 @@ contains
     integer, save :: zbuf_rank = 0
     type(c_ptr), save :: d_zeros = c_null_ptr
     type(c_ptr) :: re_dev, rgs_dev, ridx_dev
-    character(len=32) :: dbg_env
-    integer :: dbg_st
     real(wp), pointer :: fp2(:)
     ! the (2,2) tables cross as cudaMalloc'd DEVICE buffers with explicit
     ! H2D copies: acc_deviceptr_ on stack-local staging returns a non-NULL
@@ -2950,43 +2968,11 @@ contains
       rgs_dev = d_tab_dummy
       ridx_dev = d_tab_dummy
     end if
-    call c_f_pointer(d_flux, d_flux_f, [nvars_l*ext**3])
-    call c_f_pointer(d_fsrc, d_fsrc_f, [nvars_l*ext**3])
-    call c_f_pointer(d_vsrc, d_vsrc_f, [nvels_l*ext**3])
     ! Pack the FACE RANGE on ALL THREE axes: for y/z sweeps the face
     ! axis lands on a different is-slot, and the x-slot pack left the low
     ! ghost face (raw -1) of that axis unpacked — the kernel then read
     ! uninitialized staging.  is1b-1..is1e+1 covers every direction's
     ! cell+face+qR range on a cubic grid.
-    ! MFC_DACE_SKIP_PACK=1: bypass the acc pack and H2D the known-good
-    ! dump bytes instead — splits "the acc pack" from "the MFC process
-    ! environment" as the dust's cause.
-    call get_environment_variable('MFC_DACE_SKIP_PACK', dbg_env, status=dbg_st)
-    if (dbg_st == 0) then
-      block
-        integer(c_size_t) :: skip_bytes
-        integer :: skip_fd, skip_ios
-        real(c_double), allocatable, target :: skip_buf(:)
-        skip_bytes = int(nvars_l*ext**3, c_size_t)*8_c_size_t
-        allocate (skip_buf(nvars_l*ext**3))
-        open (newunit=skip_fd, file='/tmp/rda/sw1_ql.bin', access='stream', &
-                status='old', iostat=skip_ios)
-        if (skip_ios == 0) then
-          read (skip_fd, pos=33) skip_buf
-          close (skip_fd)
-          ierr = cudaMemcpy_(d_ql, c_loc(skip_buf(1)), skip_bytes, cpH2D)
-          call chk(ierr, 'skip-pack H2D ql')
-          open (newunit=skip_fd, file='/tmp/rda/sw1_qr.bin', access='stream', &
-                  status='old', iostat=skip_ios)
-          read (skip_fd) skip_buf
-          close (skip_fd)
-          ierr = cudaMemcpy_(d_qr, c_loc(skip_buf(1)), skip_bytes, cpH2D)
-          call chk(ierr, 'skip-pack H2D qr')
-          print *, 'SKIP_PACK: the known-good inputs H2D''d'
-        end if
-        deallocate (skip_buf)
-      end block
-    else
     !$acc parallel loop collapse(3) deviceptr(d_ql_f, d_qr_f)
     do l_raw = is1b, is1e + 1
       do k_raw = is1b, is1e + 1
@@ -3007,47 +2993,7 @@ contains
       end do
     end do
     !$acc end parallel loop
-    end if
     call acc_wait_all()
-    block
-      character(len=32) :: dbg_env
-      character(len=1) :: dbg_dtag
-      integer :: dbg_st
-      integer(c_int64_t) :: dbg_n
-      real(c_double), allocatable, target :: dbg_buf(:)
-      integer, save :: dumpq_count(3) = [0, 0, 0]
-      character(len=8) :: dbg_stage2
-      integer :: dbg_want2
-      call get_environment_variable('MFC_SWEEPS_DUMP', dbg_env, status=dbg_st)
-      call get_environment_variable('MFC_SWEEPS_DUMP_STAGE', dbg_stage2, &
-                                    status=dbg_st)
-      if (dbg_st == 0) then
-        read (dbg_stage2, *) dbg_want2
-      else
-        dbg_want2 = 1
-      end if
-      if (dir_in >= 1 .and. dir_in <= 3) then
-        dumpq_count(dir_in) = dumpq_count(dir_in) + 1
-        if (dumpq_count(dir_in) == dbg_want2) then
-          write (dbg_dtag, '(I1)') dir_in
-          dbg_n = int(nvars_l*ext**3, c_size_t)
-          allocate (dbg_buf(dbg_n))
-          ierr = cudaMemcpy_(c_loc(dbg_buf), d_ql, dbg_n*8_c_size_t, cpD2H)
-          open (10, file='/tmp/sw'//dbg_dtag//'_ql.bin', &
-                  form='unformatted', access='stream')
-          write (10) ext, nvars_l, is1b, is1e, is2b, is2e, is3b, is3e
-          write (10) dbg_buf
-          close (10)
-          ierr = cudaMemcpy_(c_loc(dbg_buf), d_qr, dbg_n*8_c_size_t, cpD2H)
-          open (10, file='/tmp/sw'//dbg_dtag//'_qr.bin', &
-                  form='unformatted', access='stream')
-          write (10) ext, nvars_l, is1b, is1e, is2b, is2e, is3b, is3e
-          write (10) dbg_buf
-          close (10)
-          print *, 'SWDUMP raw: ql dir', dir_in, 'call', dbg_want2
-        end if
-      end if
-    end block
 
     ! loop bounds: the kernel's (j,k,l) = the MFC dims 1/2/3 by
     ! construction; per sweep the raw face range lands on a different
@@ -3063,16 +3009,28 @@ contains
       jd(1) = is1b; jd(2) = is1e; jd(3) = is2b
       jd(4) = is2e; jd(5) = is3b; jd(6) = is3e
     end select
+    ! HEAP GEOMETRY STASH: captured HERE — immediately after jd, before the
+    ! init call, the debug prints, and the dace run, each of which has been
+    ! observed corrupting the dummies (is3b/is3e), stack locals, and module
+    ! statics.  The unpack (device permute kernels, dump headers) reads
+    ! ONLY this stash; the heap has survived every corruption event.
+    if (allocated(uperm_geom)) deallocate (uperm_geom)
+    allocate (uperm_geom(uperm_gn))
+    uperm_geom(1:6) = jd
+    uperm_geom(7) = lbound(flux_rsx, 1)
+    uperm_geom(8) = size(flux_rsx, 1)
+    uperm_geom(9) = size(flux_rsx, 2)
+    uperm_geom(10) = size(flux_rsx, 3)
+    uperm_geom(11) = size(flux_rsx, 1)*size(flux_rsx, 2)*size(flux_rsx, 3)
+    uperm_geom(12) = ext
+    uperm_geom(13) = buff_size
+    uperm_geom(14) = eqn_idx%adv%beg - 1
+    uperm_geom(15) = nvars_l
+    uperm_geom(16) = nadv_l
+    uperm_geom(17) = nvels_l
+    uperm_geom(18) = dir_in
     e64 = int(ext, c_int64_t)
     nv64 = int(nvars_l, c_int64_t)
-
-    ! CONTEXT PROBE: log the current CUDA context around the pack/run to
-    ! identify the acc-vs-dace context conflict.
-    block
-      type(c_ptr) :: dbg_ctx
-      dbg_ctx = cu_ctx_get_current()
-      print *, 'CTXDBG: before pack ctx =', transfer(dbg_ctx, 0_c_int64_t)
-    end block
 
     if (state_ext(dir_in) /= ext) then
       if (c_associated(state_sweeps(dir_in))) then
@@ -3126,59 +3084,6 @@ contains
       state_ext(dir_in) = ext
     end if
 
-    print *, 'SHIMDBG dir=', dir_in, ' ext=', ext, ' e64=', e64, &
-             ' re_e64=', re_e64, ' nv64=', nv64, ' jd=', jd, &
-             ' rsz=', rsz1, rsz2, ' nvels=', nvels_l, ' ext1=', ext1
-    call get_environment_variable('MFC_DACE_D2D_FLUX', dbg_env, status=dbg_st)
-    if (dbg_st == 0) then
-      block
-        integer(c_size_t) :: d2d_bytes
-        integer :: d2d_fd, d2d_ios
-        real(c_double), allocatable, target :: d2d_buf(:)
-        integer :: d2d_i
-        d2d_bytes = int(nvars_l*ext**3, c_size_t)*8_c_size_t
-        allocate (d2d_buf(nvars_l*ext**3))
-        open (newunit=d2d_fd, file=trim(dbg_env), access='stream', &
-                status='old', iostat=d2d_ios)
-        read (d2d_fd) d2d_buf
-        close (d2d_fd)
-        ! write via the ACC context (the unpack reads from it): the runtime-API
-        ! H2D = the primary = the cross-context staleness suspect
-        call c_f_pointer(d_flux, d_flux_f, [nvars_l*ext**3])
-        !$acc parallel loop deviceptr(d_flux_f)
-        do d2d_i = 0, nvars_l*ext**3 - 1
-          d_flux_f(d2d_i + 1) = d2d_buf(d2d_i + 1)
-        end do
-        !$acc end parallel loop
-        open (newunit=d2d_fd, file=trim(dbg_env)//'.fsrc', access='stream', &
-                status='old', iostat=d2d_ios)
-        if (d2d_ios == 0) then
-          read (d2d_fd) d2d_buf
-          close (d2d_fd)
-          call c_f_pointer(d_fsrc, d_fsrc_f, [nvars_l*ext**3])
-          !$acc parallel loop deviceptr(d_fsrc_f)
-          do d2d_i = 0, nvars_l*ext**3 - 1
-            d_fsrc_f(d2d_i + 1) = d2d_buf(d2d_i + 1)
-          end do
-          !$acc end parallel loop
-        end if
-        open (newunit=d2d_fd, file=trim(dbg_env)//'.vsrc', access='stream', &
-                status='old', iostat=d2d_ios)
-        if (d2d_ios == 0) then
-          read (d2d_fd) d2d_buf(1:nvels_l*ext**3)
-          close (d2d_fd)
-          call c_f_pointer(d_vsrc, d_vsrc_f, [nvels_l*ext**3])
-          !$acc parallel loop deviceptr(d_vsrc_f)
-          do d2d_i = 0, nvels_l*ext**3 - 1
-            d_vsrc_f(d2d_i + 1) = d2d_buf(d2d_i + 1)
-          end do
-          !$acc end parallel loop
-        end if
-        deallocate (d2d_buf)
-      end block
-      print *, 'D2D_FLUX: the known-correct flux H2D''d, the dace run SKIPPED'
-      ierr = cudaDeviceSynchronize_(); call chk(ierr, 'sync')
-    else
     select case (dir_in)
     case (2)
       call sweeps_run_y(state_sweeps(2), &
@@ -3376,85 +3281,131 @@ contains
           & int(rsz1, c_int), int(rsz2, c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
           & int(nvels_l, c_int64_t), e64, e64)
     end select
-    end if
     ierr = cudaDeviceSynchronize_(); call chk(ierr, 'sync')
-    block
-      type(c_ptr) :: dbg_ctx2
-      dbg_ctx2 = cu_ctx_get_current()
-      print *, 'CTXDBG: after run ctx =', transfer(dbg_ctx2, 0_c_int64_t)
-    end block
 
-    block
-      character(len=32) :: dbg_env
-      character(len=1) :: dbg_dtag
-      integer :: dbg_st
-      integer(c_int64_t) :: dbg_n
-      real(c_double), allocatable, target :: dbg_buf(:)
-      integer, save :: dump_count(3) = [0, 0, 0]
-      character(len=8) :: dbg_stage
-      integer :: dbg_want, dbg_num
-      call get_environment_variable('MFC_SWEEPS_DUMP', dbg_env, status=dbg_st)
-      call get_environment_variable('MFC_SWEEPS_DUMP_STAGE', dbg_stage, &
-                                    status=dbg_st)
-      if (dbg_st == 0) then
-        read (dbg_stage, *) dbg_want
-      else
-        dbg_want = 1
-      end if
-      if (dir_in >= 1 .and. dir_in <= 3) then
-        dump_count(dir_in) = dump_count(dir_in) + 1
-        if (dump_count(dir_in) == dbg_want) then
-          write (dbg_dtag, '(I1)') dir_in
-          dbg_num = dump_count(dir_in)
-          dbg_n = int(nvars_l*ext**3, c_size_t)
-          allocate (dbg_buf(dbg_n))
-          ierr = cudaMemcpy_(c_loc(dbg_buf), d_flux, dbg_n*8_c_size_t, cpD2H)
-          open (10, file='/tmp/sw'//dbg_dtag//'_fluxraw.bin', &
-                  form='unformatted', access='stream')
-          write (10) ext, nvars_l, is1b, is1e, is2b, is2e, is3b, is3e
-          write (10) dbg_buf
-          close (10)
-          deallocate (dbg_buf)
-          print *, 'SWDUMP raw: flux dir', dir_in, 'call', dbg_num
-        end if
-      end if
-    end block
 
-    ! unpack the fluxes ON DEVICE: the kernel output for raw face s lives
-    ! at 0-based s + buff_size - 1 (the pack's convention).  Descriptor-path
-    ! writes into the live rsx arrays; MFC's own s_finalize_riemann_solver
-    ! then reshapes into flux_vf/flux_src_vf exactly as in the OpenACC path.
-    !$acc parallel loop collapse(3) deviceptr(d_flux_f, d_fsrc_f, d_vsrc_f)
-    do l_raw = is3b, is3e
-      do k_raw = is2b, is2e
-        do u = 0, is1e - is1b
-          s_raw = u + is1b
-          src_base = (s_raw + buff_size - 1) + &
-                     & ext*((k_raw + buff_size - 1) + &
-                            ext*(l_raw + buff_size - 1))
-          dst_base = (s_raw - is1b) + &
-                     & exto1*((k_raw - is2b) + exto2*(l_raw - is3b))
-          do e = 1, nvars_l
-            flux_rsx(s_raw, k_raw, l_raw, e) = &
-                d_flux_f((e - 1) + nvars_l*src_base + 1)
-          end do
-          do e = 1, nvels_l
-            vsrc_rsx(s_raw, k_raw, l_raw, e) = &
-                d_vsrc_f((e - 1) + nvels_l*src_base + 1)
-          end do
-          ! the kernel addresses the fsrc rows by ABSOLUTE eqn index against
-          ! the sys_size-strided buffer; the caller's fsrc rows run
-          ! adv%beg..sys_size
-          do e = 1, nadv_l
-            fsrc_rsx(s_raw, k_raw, l_raw, eqn_idx%adv%beg + e - 1) = &
-                d_fsrc_f((eqn_idx%adv%beg + e - 2) + nvars_l*src_base + 1)
+    ! unpack the fluxes ON DEVICE via RAW DEVICE POINTERS: the kernel output
+    ! for raw face s lives at 0-based s + buff_size - 1 (the pack's
+    ! convention).  The assumed-shape write path (flux_rsx(...) through the
+    ! present table) silently lands in an acc temporary whenever the caller's
+    ! data region does not map the rsx array, which zeroed every production
+    ! rsx output (the D2D diagnostic: known-good bytes in d_flux, zeros in
+    ! flux_rsx_vf).  acc_deviceptr_ + explicit flat indexing (e outermost,
+    ! the Fortran (s,k,l,e) layout) is layout-exact and mapping-independent;
+    ! MFC's own s_finalize_riemann_solver then reshapes into flux_vf /
+    ! flux_src_vf exactly as in the OpenACC path.
+    flux_dev = acc_deviceptr_(c_loc(flux_rsx(lbound(flux_rsx, 1), &
+                                             lbound(flux_rsx, 2), &
+                                             lbound(flux_rsx, 3), 1)))
+    fsrc_dev = acc_deviceptr_(c_loc(fsrc_rsx(lbound(fsrc_rsx, 1), &
+                                             lbound(fsrc_rsx, 2), &
+                                             lbound(fsrc_rsx, 3), &
+                                             lbound(fsrc_rsx, 4))))
+    vsrc_dev = acc_deviceptr_(c_loc(vsrc_rsx(lbound(vsrc_rsx, 1), &
+                                             lbound(vsrc_rsx, 2), &
+                                             lbound(vsrc_rsx, 3), 1)))
+    if (flux_dev == c_null_ptr .or. fsrc_dev == c_null_ptr .or. &
+        & vsrc_dev == c_null_ptr) then
+      print *, 'm_dace_kernels_sweeps: rsx arrays not device-present for unpack'
+      error stop 1
+    end if
+    ! HOST-SIDE UNPACK: the acc-region variant silently no-ops in this
+    ! context regardless of directive form (collapse, deviceptr set, hoisted
+    ! bounds — a tagged write inside the region never lands while an
+    ! identical standalone probe right after it does), so the permutation
+    ! runs on the host: D2H the kernel's packed output, permute, H2D into
+    ! the device-resident rsx arrays.  O(nvars*ext^3) work over ~5 MB
+    ! buffers — negligible next to the HLLC kernel; MFC's own
+    ! s_finalize_riemann_solver then reshapes flux_vf/flux_src_vf exactly
+    ! as in the OpenACC path.
+    ! All geometry below reads the HEAP stash (uperm_geom): the dace run
+    ! smashes stack locals and module statics; the heap survives.
+    ! ON-DEVICE UNPACK: the kernel's packed output (eqn-fastest per position,
+    ! the window at +buff_size-1 offsets) permutes straight into the
+    ! device-resident rsx arrays (eqn-outermost, lbound -1) with acc kernels
+    ! through RAW DEVICE POINTERS — the same deviceptr mechanism as the pack.
+    ! No host round trip: the D2H + host permute + H2D triple cost ~5 ms/step
+    ! at 32^3 (134 MB/step of D2H) and dominated the dispatch-bound premium.
+    ! The unpack writes ONLY the kernel's jd window (like the OpenACC kernel,
+    ! whose out-of-window slots keep the previous direction's residue — read
+    ! by nothing downstream).
+    ! All geometry is hoisted from the HEAP stash (uperm_geom) into locals
+    ! immediately before each region: the dace run smashes stack locals and
+    ! module statics; the heap survives, and the corruption burst is over by
+    ! unpack time.
+    j1b = uperm_geom(1); j1e = uperm_geom(2)
+    j2b = uperm_geom(3); j2e = uperm_geom(4)
+    j3b = uperm_geom(5); j3e = uperm_geom(6)
+    lbv = uperm_geom(7); n1v = uperm_geom(8); n2v = uperm_geom(9)
+    estv = uperm_geom(11); extv = uperm_geom(12); bufv = uperm_geom(13)
+    eoffv = uperm_geom(14); nrowsv = uperm_geom(15)
+    call c_f_pointer(d_flux, pk_f, [int(nrowsv*extv**3, c_size_t)])
+    call c_f_pointer(flux_dev, rs_f, [int(n1v*n2v*uperm_geom(10)*nrowsv, c_size_t)])
+    !$acc parallel loop collapse(3) deviceptr(pk_f, rs_f)
+    do l_raw = 0, j3e - j3b
+      do k_raw = 0, j2e - j2b
+        do u = 0, j1e - j1b
+          s_raw = u + j1b
+          k = k_raw + j2b
+          l = l_raw + j3b
+          dst_base = (s_raw - lbv) + n1v*((k - lbv) + n2v*(l - lbv))
+          src_base = (s_raw + bufv - 1) + &
+                     extv*((k + bufv - 1) + extv*(l + bufv - 1))
+          do e = 1, nrowsv
+            rs_f(dst_base + estv*(e - 1) + 1) = pk_f((e - 1) + nrowsv*src_base + 1)
           end do
         end do
       end do
     end do
     !$acc end parallel loop
-    call acc_wait_all()
-    ! (no post-unpack sync: the next consumer is acc-stream-ordered)
+
+    call c_f_pointer(d_vsrc, pk_f, [int(uperm_geom(17)*extv**3, c_size_t)])
+    call c_f_pointer(vsrc_dev, rs_f, [int(n1v*n2v*uperm_geom(10)*uperm_geom(17), c_size_t)])
+    !$acc parallel loop collapse(3) deviceptr(pk_f, rs_f)
+    do l_raw = 0, j3e - j3b
+      do k_raw = 0, j2e - j2b
+        do u = 0, j1e - j1b
+          s_raw = u + j1b
+          k = k_raw + j2b
+          l = l_raw + j3b
+          dst_base = (s_raw - lbv) + n1v*((k - lbv) + n2v*(l - lbv))
+          src_base = (s_raw + bufv - 1) + &
+                     extv*((k + bufv - 1) + extv*(l + bufv - 1))
+          do e = 1, uperm_geom(17)
+            rs_f(dst_base + estv*(e - 1) + 1) = pk_f((e - 1) + uperm_geom(17)*src_base + 1)
+          end do
+        end do
+      end do
+    end do
+    !$acc end parallel loop
+
+    ! the kernel addresses the fsrc rows by ABSOLUTE eqn index against
+    ! the sys_size-strided buffer; the caller's fsrc rows run
+    ! adv%beg..sys_size
+    call c_f_pointer(d_fsrc, pk_f, [int(nrowsv*extv**3, c_size_t)])
+    call c_f_pointer(fsrc_dev, rs_f, [int(n1v*n2v*uperm_geom(10)*uperm_geom(16), c_size_t)])
+    !$acc parallel loop collapse(3) deviceptr(pk_f, rs_f)
+    do l_raw = 0, j3e - j3b
+      do k_raw = 0, j2e - j2b
+        do u = 0, j1e - j1b
+          s_raw = u + j1b
+          k = k_raw + j2b
+          l = l_raw + j3b
+          dst_base = (s_raw - lbv) + n1v*((k - lbv) + n2v*(l - lbv))
+          src_base = (s_raw + bufv - 1) + &
+                     extv*((k + bufv - 1) + extv*(l + bufv - 1))
+          do e = 1, uperm_geom(16)
+            rs_f(dst_base + estv*(e - 1) + 1) = &
+                pk_f((eoffv + e - 1) + nrowsv*src_base + 1)
+          end do
+        end do
+      end do
+    end do
+    !$acc end parallel loop
+    ! the H2Ds ride the legacy default stream while the acc consumers (the
+    ! dump's update host, s_finalize) run on nvfortran's own stream — sync
+    ! device-wide so the uploads are visible stream-ordered.
+    ierr = cudaDeviceSynchronize_(); call chk(ierr, 'post-unpack sync')
 
     block
       logical :: dmp = .false.
