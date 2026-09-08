@@ -3402,10 +3402,6 @@ contains
       end do
     end do
     !$acc end parallel loop
-    ! the H2Ds ride the legacy default stream while the acc consumers (the
-    ! dump's update host, s_finalize) run on nvfortran's own stream — sync
-    ! device-wide so the uploads are visible stream-ordered.
-    ierr = cudaDeviceSynchronize_(); call chk(ierr, 'post-unpack sync')
 
     block
       logical :: dmp = .false.
