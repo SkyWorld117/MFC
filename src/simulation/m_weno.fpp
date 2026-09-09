@@ -913,7 +913,8 @@ contains
     subroutine s_weno(v_vf, vL_rs_vf_x, vR_rs_vf_x, weno_dir, is1_weno_d, is2_weno_d, is3_weno_d)
 
 #if defined(MFC_DACE)
-        use m_dace_kernels_weno, only: s_dace_weno_x, weno_dace_contract, &
+        use m_dace_kernels_weno, only: s_dace_weno_x, s_dace_weno_y, &
+                                       & s_dace_weno_z, weno_dace_contract, &
                                        & weno_dace_mode, weno_dace_dirs
 #endif
         type(scalar_field), dimension(1:), intent(in)                                          :: v_vf
@@ -1101,10 +1102,22 @@ contains
                         if (weno_dace_dirs(${WENO_DIR}$) .and. &
                             & weno_dace_mode() >= 1 .and. weno_dace_contract() .and. &
                             & v_size == 8 .and. uniform_grid(${WENO_DIR}$)) then
-                            call s_dace_weno_x(v_rs_weno, poly_coef_cbL_${XYZ}$, poly_coef_cbR_${XYZ}$, &
-                                               & d_cbL_${XYZ}$, d_cbR_${XYZ}$, vL_rs_vf_x, vR_rs_vf_x, &
+                            #:if WENO_DIR == 1
+                            call s_dace_weno_x(v_rs_weno, poly_coef_cbL_x, poly_coef_cbR_x, &
+                                               & d_cbL_x, d_cbR_x, vL_rs_vf_x, vR_rs_vf_x, &
                                                & is1_weno%beg, is1_weno%end, is2_weno%beg, &
                                                & is2_weno%end, is3_weno%beg, is3_weno%end)
+                            #:elif WENO_DIR == 2
+                            call s_dace_weno_y(v_rs_weno, poly_coef_cbL_y, poly_coef_cbR_y, &
+                                               & d_cbL_y, d_cbR_y, vL_rs_vf_x, vR_rs_vf_x, &
+                                               & is2_weno%beg, is2_weno%end, is1_weno%beg, &
+                                               & is1_weno%end, is3_weno%beg, is3_weno%end)
+                            #:else
+                            call s_dace_weno_z(v_rs_weno, poly_coef_cbL_z, poly_coef_cbR_z, &
+                                               & d_cbL_z, d_cbR_z, vL_rs_vf_x, vR_rs_vf_x, &
+                                               & is3_weno%beg, is3_weno%end, is2_weno%beg, &
+                                               & is2_weno%end, is1_weno%beg, is1_weno%end)
+                            #:endif
                         end if
                         if (.not. (weno_dace_dirs(${WENO_DIR}$) .and. &
                                    & weno_dace_mode() == 1 .and. weno_dace_contract() .and. &
