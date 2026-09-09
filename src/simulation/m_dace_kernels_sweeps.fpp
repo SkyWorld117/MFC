@@ -380,40 +380,23 @@ module m_dace_kernels_sweeps
           & y_cc, &
           & z_cb, &
           & z_cc, &
-          & fd_coeff_x_d0, &
-          & fd_coeff_y_d0, &
-          & fd_coeff_z_d0, &
           & flux_d0, &
           & flux_d1, &
           & flux_d2, &
           & fsrc_d0, &
           & fsrc_d1, &
           & fsrc_d2, &
-          & gamma_sf_d0, &
-          & gamma_sf_d1, &
-          & ib_neighbor_ranks_d0, &
-          & ib_neighbor_ranks_d1, &
           & jb, &
           & je, &
           & kb, &
           & ke, &
           & lb, &
           & le, &
-          & mpi_io_data_lag_bubbles_d0, &
-          & neighbor_ranks_d0, &
-          & neighbor_ranks_d1, &
           & offset_gammas_d0, &
           & offset_pi_infs_d0, &
           & offset_qvs_d0, &
           & offset_re_idx_d0, &
           & offset_re_idx_d1, &
-          & p_send_ids_d0, &
-          & p_send_ids_d1, &
-          & p_send_ids_d2, &
-          & pi_inf_sf_d0, &
-          & pi_inf_sf_d1, &
-          & ptil_d0, &
-          & ptil_d1, &
           & ql_d0, &
           & ql_d1, &
           & ql_d2, &
@@ -425,15 +408,8 @@ module m_dace_kernels_sweeps
           & re_d2, &
           & re_idx_d0, &
           & res_gs_d0, &
-          & res_vc_d0, &
-          & rho_sf_d0, &
-          & rho_sf_d1, &
           & rsz1, &
           & rsz2, &
-          & spbf_source_x_d0, &
-          & spbf_source_x_d1, &
-          & spbf_source_y_d0, &
-          & spbf_source_y_d1, &
           & vsrc_d0, &
           & vsrc_d1, &
           & vsrc_d2) &
@@ -758,40 +734,23 @@ module m_dace_kernels_sweeps
       type(c_ptr), value :: y_cc
       type(c_ptr), value :: z_cb
       type(c_ptr), value :: z_cc
-      integer(c_int64_t), value :: fd_coeff_x_d0
-      integer(c_int64_t), value :: fd_coeff_y_d0
-      integer(c_int64_t), value :: fd_coeff_z_d0
       integer(c_int64_t), value :: flux_d0
       integer(c_int64_t), value :: flux_d1
       integer(c_int64_t), value :: flux_d2
       integer(c_int64_t), value :: fsrc_d0
       integer(c_int64_t), value :: fsrc_d1
       integer(c_int64_t), value :: fsrc_d2
-      integer(c_int64_t), value :: gamma_sf_d0
-      integer(c_int64_t), value :: gamma_sf_d1
-      integer(c_int64_t), value :: ib_neighbor_ranks_d0
-      integer(c_int64_t), value :: ib_neighbor_ranks_d1
       integer(c_int), value :: jb
       integer(c_int), value :: je
       integer(c_int), value :: kb
       integer(c_int), value :: ke
       integer(c_int), value :: lb
       integer(c_int), value :: le
-      integer(c_int64_t), value :: mpi_io_data_lag_bubbles_d0
-      integer(c_int64_t), value :: neighbor_ranks_d0
-      integer(c_int64_t), value :: neighbor_ranks_d1
       integer(c_int64_t), value :: offset_gammas_d0
       integer(c_int64_t), value :: offset_pi_infs_d0
       integer(c_int64_t), value :: offset_qvs_d0
       integer(c_int64_t), value :: offset_re_idx_d0
       integer(c_int64_t), value :: offset_re_idx_d1
-      integer(c_int64_t), value :: p_send_ids_d0
-      integer(c_int64_t), value :: p_send_ids_d1
-      integer(c_int64_t), value :: p_send_ids_d2
-      integer(c_int64_t), value :: pi_inf_sf_d0
-      integer(c_int64_t), value :: pi_inf_sf_d1
-      integer(c_int64_t), value :: ptil_d0
-      integer(c_int64_t), value :: ptil_d1
       integer(c_int64_t), value :: ql_d0
       integer(c_int64_t), value :: ql_d1
       integer(c_int64_t), value :: ql_d2
@@ -803,55 +762,30 @@ module m_dace_kernels_sweeps
       integer(c_int64_t), value :: re_d2
       integer(c_int64_t), value :: re_idx_d0
       integer(c_int64_t), value :: res_gs_d0
-      integer(c_int64_t), value :: res_vc_d0
-      integer(c_int64_t), value :: rho_sf_d0
-      integer(c_int64_t), value :: rho_sf_d1
       integer(c_int), value :: rsz1
       integer(c_int), value :: rsz2
-      integer(c_int64_t), value :: spbf_source_x_d0
-      integer(c_int64_t), value :: spbf_source_x_d1
-      integer(c_int64_t), value :: spbf_source_y_d0
-      integer(c_int64_t), value :: spbf_source_y_d1
       integer(c_int64_t), value :: vsrc_d0
       integer(c_int64_t), value :: vsrc_d1
       integer(c_int64_t), value :: vsrc_d2
     end subroutine
 
-    function sweeps_init_x(&
-          & fd_coeff_x_d0, &
-          & fd_coeff_y_d0, &
-          & fd_coeff_z_d0, &
-          & flux_d0, &
+    function sweeps_init_x(flux_d0, &
           & flux_d1, &
           & flux_d2, &
           & fsrc_d0, &
           & fsrc_d1, &
           & fsrc_d2, &
-          & gamma_sf_d0, &
-          & gamma_sf_d1, &
-          & ib_neighbor_ranks_d0, &
-          & ib_neighbor_ranks_d1, &
           & jb, &
           & je, &
           & kb, &
           & ke, &
           & lb, &
           & le, &
-          & mpi_io_data_lag_bubbles_d0, &
-          & neighbor_ranks_d0, &
-          & neighbor_ranks_d1, &
           & offset_gammas_d0, &
           & offset_pi_infs_d0, &
           & offset_qvs_d0, &
           & offset_re_idx_d0, &
           & offset_re_idx_d1, &
-          & p_send_ids_d0, &
-          & p_send_ids_d1, &
-          & p_send_ids_d2, &
-          & pi_inf_sf_d0, &
-          & pi_inf_sf_d1, &
-          & ptil_d0, &
-          & ptil_d1, &
           & ql_d0, &
           & ql_d1, &
           & ql_d2, &
@@ -863,55 +797,29 @@ module m_dace_kernels_sweeps
           & re_d2, &
           & re_idx_d0, &
           & res_gs_d0, &
-          & res_vc_d0, &
-          & rho_sf_d0, &
-          & rho_sf_d1, &
-          & rsz1, &
-          & rsz2, &
-          & spbf_source_x_d0, &
-          & spbf_source_x_d1, &
-          & spbf_source_y_d0, &
-          & spbf_source_y_d1, &
           & vsrc_d0, &
           & vsrc_d1, &
           & vsrc_d2) &
         bind(C, name='__dace_init_mfc_dace_sweeps_x')
       import :: c_ptr, c_int, c_int64_t, c_double
       type(c_ptr) :: sweeps_init_x
-      integer(c_int64_t), value :: fd_coeff_x_d0
-      integer(c_int64_t), value :: fd_coeff_y_d0
-      integer(c_int64_t), value :: fd_coeff_z_d0
       integer(c_int64_t), value :: flux_d0
       integer(c_int64_t), value :: flux_d1
       integer(c_int64_t), value :: flux_d2
       integer(c_int64_t), value :: fsrc_d0
       integer(c_int64_t), value :: fsrc_d1
       integer(c_int64_t), value :: fsrc_d2
-      integer(c_int64_t), value :: gamma_sf_d0
-      integer(c_int64_t), value :: gamma_sf_d1
-      integer(c_int64_t), value :: ib_neighbor_ranks_d0
-      integer(c_int64_t), value :: ib_neighbor_ranks_d1
       integer(c_int), value :: jb
       integer(c_int), value :: je
       integer(c_int), value :: kb
       integer(c_int), value :: ke
       integer(c_int), value :: lb
       integer(c_int), value :: le
-      integer(c_int64_t), value :: mpi_io_data_lag_bubbles_d0
-      integer(c_int64_t), value :: neighbor_ranks_d0
-      integer(c_int64_t), value :: neighbor_ranks_d1
       integer(c_int64_t), value :: offset_gammas_d0
       integer(c_int64_t), value :: offset_pi_infs_d0
       integer(c_int64_t), value :: offset_qvs_d0
       integer(c_int64_t), value :: offset_re_idx_d0
       integer(c_int64_t), value :: offset_re_idx_d1
-      integer(c_int64_t), value :: p_send_ids_d0
-      integer(c_int64_t), value :: p_send_ids_d1
-      integer(c_int64_t), value :: p_send_ids_d2
-      integer(c_int64_t), value :: pi_inf_sf_d0
-      integer(c_int64_t), value :: pi_inf_sf_d1
-      integer(c_int64_t), value :: ptil_d0
-      integer(c_int64_t), value :: ptil_d1
       integer(c_int64_t), value :: ql_d0
       integer(c_int64_t), value :: ql_d1
       integer(c_int64_t), value :: ql_d2
@@ -923,15 +831,8 @@ module m_dace_kernels_sweeps
       integer(c_int64_t), value :: re_d2
       integer(c_int64_t), value :: re_idx_d0
       integer(c_int64_t), value :: res_gs_d0
-      integer(c_int64_t), value :: res_vc_d0
-      integer(c_int64_t), value :: rho_sf_d0
-      integer(c_int64_t), value :: rho_sf_d1
       integer(c_int), value :: rsz1
       integer(c_int), value :: rsz2
-      integer(c_int64_t), value :: spbf_source_x_d0
-      integer(c_int64_t), value :: spbf_source_x_d1
-      integer(c_int64_t), value :: spbf_source_y_d0
-      integer(c_int64_t), value :: spbf_source_y_d1
       integer(c_int64_t), value :: vsrc_d0
       integer(c_int64_t), value :: vsrc_d1
       integer(c_int64_t), value :: vsrc_d2
@@ -1263,40 +1164,23 @@ module m_dace_kernels_sweeps
           & y_cc, &
           & z_cb, &
           & z_cc, &
-          & fd_coeff_x_d0, &
-          & fd_coeff_y_d0, &
-          & fd_coeff_z_d0, &
           & flux_d0, &
           & flux_d1, &
           & flux_d2, &
           & fsrc_d0, &
           & fsrc_d1, &
           & fsrc_d2, &
-          & gamma_sf_d0, &
-          & gamma_sf_d1, &
-          & ib_neighbor_ranks_d0, &
-          & ib_neighbor_ranks_d1, &
           & jb, &
           & je, &
           & kb, &
           & ke, &
           & lb, &
           & le, &
-          & mpi_io_data_lag_bubbles_d0, &
-          & neighbor_ranks_d0, &
-          & neighbor_ranks_d1, &
           & offset_gammas_d0, &
           & offset_pi_infs_d0, &
           & offset_qvs_d0, &
           & offset_re_idx_d0, &
           & offset_re_idx_d1, &
-          & p_send_ids_d0, &
-          & p_send_ids_d1, &
-          & p_send_ids_d2, &
-          & pi_inf_sf_d0, &
-          & pi_inf_sf_d1, &
-          & ptil_d0, &
-          & ptil_d1, &
           & ql_d0, &
           & ql_d1, &
           & ql_d2, &
@@ -1308,15 +1192,8 @@ module m_dace_kernels_sweeps
           & re_d2, &
           & re_idx_d0, &
           & res_gs_d0, &
-          & res_vc_d0, &
-          & rho_sf_d0, &
-          & rho_sf_d1, &
           & rsz1, &
           & rsz2, &
-          & spbf_source_x_d0, &
-          & spbf_source_x_d1, &
-          & spbf_source_y_d0, &
-          & spbf_source_y_d1, &
           & vsrc_d0, &
           & vsrc_d1, &
           & vsrc_d2) &
@@ -1641,40 +1518,23 @@ module m_dace_kernels_sweeps
       type(c_ptr), value :: y_cc
       type(c_ptr), value :: z_cb
       type(c_ptr), value :: z_cc
-      integer(c_int64_t), value :: fd_coeff_x_d0
-      integer(c_int64_t), value :: fd_coeff_y_d0
-      integer(c_int64_t), value :: fd_coeff_z_d0
       integer(c_int64_t), value :: flux_d0
       integer(c_int64_t), value :: flux_d1
       integer(c_int64_t), value :: flux_d2
       integer(c_int64_t), value :: fsrc_d0
       integer(c_int64_t), value :: fsrc_d1
       integer(c_int64_t), value :: fsrc_d2
-      integer(c_int64_t), value :: gamma_sf_d0
-      integer(c_int64_t), value :: gamma_sf_d1
-      integer(c_int64_t), value :: ib_neighbor_ranks_d0
-      integer(c_int64_t), value :: ib_neighbor_ranks_d1
       integer(c_int), value :: jb
       integer(c_int), value :: je
       integer(c_int), value :: kb
       integer(c_int), value :: ke
       integer(c_int), value :: lb
       integer(c_int), value :: le
-      integer(c_int64_t), value :: mpi_io_data_lag_bubbles_d0
-      integer(c_int64_t), value :: neighbor_ranks_d0
-      integer(c_int64_t), value :: neighbor_ranks_d1
       integer(c_int64_t), value :: offset_gammas_d0
       integer(c_int64_t), value :: offset_pi_infs_d0
       integer(c_int64_t), value :: offset_qvs_d0
       integer(c_int64_t), value :: offset_re_idx_d0
       integer(c_int64_t), value :: offset_re_idx_d1
-      integer(c_int64_t), value :: p_send_ids_d0
-      integer(c_int64_t), value :: p_send_ids_d1
-      integer(c_int64_t), value :: p_send_ids_d2
-      integer(c_int64_t), value :: pi_inf_sf_d0
-      integer(c_int64_t), value :: pi_inf_sf_d1
-      integer(c_int64_t), value :: ptil_d0
-      integer(c_int64_t), value :: ptil_d1
       integer(c_int64_t), value :: ql_d0
       integer(c_int64_t), value :: ql_d1
       integer(c_int64_t), value :: ql_d2
@@ -1686,55 +1546,30 @@ module m_dace_kernels_sweeps
       integer(c_int64_t), value :: re_d2
       integer(c_int64_t), value :: re_idx_d0
       integer(c_int64_t), value :: res_gs_d0
-      integer(c_int64_t), value :: res_vc_d0
-      integer(c_int64_t), value :: rho_sf_d0
-      integer(c_int64_t), value :: rho_sf_d1
       integer(c_int), value :: rsz1
       integer(c_int), value :: rsz2
-      integer(c_int64_t), value :: spbf_source_x_d0
-      integer(c_int64_t), value :: spbf_source_x_d1
-      integer(c_int64_t), value :: spbf_source_y_d0
-      integer(c_int64_t), value :: spbf_source_y_d1
       integer(c_int64_t), value :: vsrc_d0
       integer(c_int64_t), value :: vsrc_d1
       integer(c_int64_t), value :: vsrc_d2
     end subroutine
 
-    function sweeps_init_y(&
-          & fd_coeff_x_d0, &
-          & fd_coeff_y_d0, &
-          & fd_coeff_z_d0, &
-          & flux_d0, &
+    function sweeps_init_y(flux_d0, &
           & flux_d1, &
           & flux_d2, &
           & fsrc_d0, &
           & fsrc_d1, &
           & fsrc_d2, &
-          & gamma_sf_d0, &
-          & gamma_sf_d1, &
-          & ib_neighbor_ranks_d0, &
-          & ib_neighbor_ranks_d1, &
           & jb, &
           & je, &
           & kb, &
           & ke, &
           & lb, &
           & le, &
-          & mpi_io_data_lag_bubbles_d0, &
-          & neighbor_ranks_d0, &
-          & neighbor_ranks_d1, &
           & offset_gammas_d0, &
           & offset_pi_infs_d0, &
           & offset_qvs_d0, &
           & offset_re_idx_d0, &
           & offset_re_idx_d1, &
-          & p_send_ids_d0, &
-          & p_send_ids_d1, &
-          & p_send_ids_d2, &
-          & pi_inf_sf_d0, &
-          & pi_inf_sf_d1, &
-          & ptil_d0, &
-          & ptil_d1, &
           & ql_d0, &
           & ql_d1, &
           & ql_d2, &
@@ -1746,55 +1581,29 @@ module m_dace_kernels_sweeps
           & re_d2, &
           & re_idx_d0, &
           & res_gs_d0, &
-          & res_vc_d0, &
-          & rho_sf_d0, &
-          & rho_sf_d1, &
-          & rsz1, &
-          & rsz2, &
-          & spbf_source_x_d0, &
-          & spbf_source_x_d1, &
-          & spbf_source_y_d0, &
-          & spbf_source_y_d1, &
           & vsrc_d0, &
           & vsrc_d1, &
           & vsrc_d2) &
         bind(C, name='__dace_init_mfc_dace_sweeps_y')
       import :: c_ptr, c_int, c_int64_t, c_double
       type(c_ptr) :: sweeps_init_y
-      integer(c_int64_t), value :: fd_coeff_x_d0
-      integer(c_int64_t), value :: fd_coeff_y_d0
-      integer(c_int64_t), value :: fd_coeff_z_d0
       integer(c_int64_t), value :: flux_d0
       integer(c_int64_t), value :: flux_d1
       integer(c_int64_t), value :: flux_d2
       integer(c_int64_t), value :: fsrc_d0
       integer(c_int64_t), value :: fsrc_d1
       integer(c_int64_t), value :: fsrc_d2
-      integer(c_int64_t), value :: gamma_sf_d0
-      integer(c_int64_t), value :: gamma_sf_d1
-      integer(c_int64_t), value :: ib_neighbor_ranks_d0
-      integer(c_int64_t), value :: ib_neighbor_ranks_d1
       integer(c_int), value :: jb
       integer(c_int), value :: je
       integer(c_int), value :: kb
       integer(c_int), value :: ke
       integer(c_int), value :: lb
       integer(c_int), value :: le
-      integer(c_int64_t), value :: mpi_io_data_lag_bubbles_d0
-      integer(c_int64_t), value :: neighbor_ranks_d0
-      integer(c_int64_t), value :: neighbor_ranks_d1
       integer(c_int64_t), value :: offset_gammas_d0
       integer(c_int64_t), value :: offset_pi_infs_d0
       integer(c_int64_t), value :: offset_qvs_d0
       integer(c_int64_t), value :: offset_re_idx_d0
       integer(c_int64_t), value :: offset_re_idx_d1
-      integer(c_int64_t), value :: p_send_ids_d0
-      integer(c_int64_t), value :: p_send_ids_d1
-      integer(c_int64_t), value :: p_send_ids_d2
-      integer(c_int64_t), value :: pi_inf_sf_d0
-      integer(c_int64_t), value :: pi_inf_sf_d1
-      integer(c_int64_t), value :: ptil_d0
-      integer(c_int64_t), value :: ptil_d1
       integer(c_int64_t), value :: ql_d0
       integer(c_int64_t), value :: ql_d1
       integer(c_int64_t), value :: ql_d2
@@ -1806,15 +1615,8 @@ module m_dace_kernels_sweeps
       integer(c_int64_t), value :: re_d2
       integer(c_int64_t), value :: re_idx_d0
       integer(c_int64_t), value :: res_gs_d0
-      integer(c_int64_t), value :: res_vc_d0
-      integer(c_int64_t), value :: rho_sf_d0
-      integer(c_int64_t), value :: rho_sf_d1
       integer(c_int), value :: rsz1
       integer(c_int), value :: rsz2
-      integer(c_int64_t), value :: spbf_source_x_d0
-      integer(c_int64_t), value :: spbf_source_x_d1
-      integer(c_int64_t), value :: spbf_source_y_d0
-      integer(c_int64_t), value :: spbf_source_y_d1
       integer(c_int64_t), value :: vsrc_d0
       integer(c_int64_t), value :: vsrc_d1
       integer(c_int64_t), value :: vsrc_d2
@@ -2146,40 +1948,23 @@ module m_dace_kernels_sweeps
           & y_cc, &
           & z_cb, &
           & z_cc, &
-          & fd_coeff_x_d0, &
-          & fd_coeff_y_d0, &
-          & fd_coeff_z_d0, &
           & flux_d0, &
           & flux_d1, &
           & flux_d2, &
           & fsrc_d0, &
           & fsrc_d1, &
           & fsrc_d2, &
-          & gamma_sf_d0, &
-          & gamma_sf_d1, &
-          & ib_neighbor_ranks_d0, &
-          & ib_neighbor_ranks_d1, &
           & jb, &
           & je, &
           & kb, &
           & ke, &
           & lb, &
           & le, &
-          & mpi_io_data_lag_bubbles_d0, &
-          & neighbor_ranks_d0, &
-          & neighbor_ranks_d1, &
           & offset_gammas_d0, &
           & offset_pi_infs_d0, &
           & offset_qvs_d0, &
           & offset_re_idx_d0, &
           & offset_re_idx_d1, &
-          & p_send_ids_d0, &
-          & p_send_ids_d1, &
-          & p_send_ids_d2, &
-          & pi_inf_sf_d0, &
-          & pi_inf_sf_d1, &
-          & ptil_d0, &
-          & ptil_d1, &
           & ql_d0, &
           & ql_d1, &
           & ql_d2, &
@@ -2191,15 +1976,8 @@ module m_dace_kernels_sweeps
           & re_d2, &
           & re_idx_d0, &
           & res_gs_d0, &
-          & res_vc_d0, &
-          & rho_sf_d0, &
-          & rho_sf_d1, &
           & rsz1, &
           & rsz2, &
-          & spbf_source_x_d0, &
-          & spbf_source_x_d1, &
-          & spbf_source_y_d0, &
-          & spbf_source_y_d1, &
           & vsrc_d0, &
           & vsrc_d1, &
           & vsrc_d2) &
@@ -2524,40 +2302,23 @@ module m_dace_kernels_sweeps
       type(c_ptr), value :: y_cc
       type(c_ptr), value :: z_cb
       type(c_ptr), value :: z_cc
-      integer(c_int64_t), value :: fd_coeff_x_d0
-      integer(c_int64_t), value :: fd_coeff_y_d0
-      integer(c_int64_t), value :: fd_coeff_z_d0
       integer(c_int64_t), value :: flux_d0
       integer(c_int64_t), value :: flux_d1
       integer(c_int64_t), value :: flux_d2
       integer(c_int64_t), value :: fsrc_d0
       integer(c_int64_t), value :: fsrc_d1
       integer(c_int64_t), value :: fsrc_d2
-      integer(c_int64_t), value :: gamma_sf_d0
-      integer(c_int64_t), value :: gamma_sf_d1
-      integer(c_int64_t), value :: ib_neighbor_ranks_d0
-      integer(c_int64_t), value :: ib_neighbor_ranks_d1
       integer(c_int), value :: jb
       integer(c_int), value :: je
       integer(c_int), value :: kb
       integer(c_int), value :: ke
       integer(c_int), value :: lb
       integer(c_int), value :: le
-      integer(c_int64_t), value :: mpi_io_data_lag_bubbles_d0
-      integer(c_int64_t), value :: neighbor_ranks_d0
-      integer(c_int64_t), value :: neighbor_ranks_d1
       integer(c_int64_t), value :: offset_gammas_d0
       integer(c_int64_t), value :: offset_pi_infs_d0
       integer(c_int64_t), value :: offset_qvs_d0
       integer(c_int64_t), value :: offset_re_idx_d0
       integer(c_int64_t), value :: offset_re_idx_d1
-      integer(c_int64_t), value :: p_send_ids_d0
-      integer(c_int64_t), value :: p_send_ids_d1
-      integer(c_int64_t), value :: p_send_ids_d2
-      integer(c_int64_t), value :: pi_inf_sf_d0
-      integer(c_int64_t), value :: pi_inf_sf_d1
-      integer(c_int64_t), value :: ptil_d0
-      integer(c_int64_t), value :: ptil_d1
       integer(c_int64_t), value :: ql_d0
       integer(c_int64_t), value :: ql_d1
       integer(c_int64_t), value :: ql_d2
@@ -2569,55 +2330,30 @@ module m_dace_kernels_sweeps
       integer(c_int64_t), value :: re_d2
       integer(c_int64_t), value :: re_idx_d0
       integer(c_int64_t), value :: res_gs_d0
-      integer(c_int64_t), value :: res_vc_d0
-      integer(c_int64_t), value :: rho_sf_d0
-      integer(c_int64_t), value :: rho_sf_d1
       integer(c_int), value :: rsz1
       integer(c_int), value :: rsz2
-      integer(c_int64_t), value :: spbf_source_x_d0
-      integer(c_int64_t), value :: spbf_source_x_d1
-      integer(c_int64_t), value :: spbf_source_y_d0
-      integer(c_int64_t), value :: spbf_source_y_d1
       integer(c_int64_t), value :: vsrc_d0
       integer(c_int64_t), value :: vsrc_d1
       integer(c_int64_t), value :: vsrc_d2
     end subroutine
 
-    function sweeps_init_z(&
-          & fd_coeff_x_d0, &
-          & fd_coeff_y_d0, &
-          & fd_coeff_z_d0, &
-          & flux_d0, &
+    function sweeps_init_z(flux_d0, &
           & flux_d1, &
           & flux_d2, &
           & fsrc_d0, &
           & fsrc_d1, &
           & fsrc_d2, &
-          & gamma_sf_d0, &
-          & gamma_sf_d1, &
-          & ib_neighbor_ranks_d0, &
-          & ib_neighbor_ranks_d1, &
           & jb, &
           & je, &
           & kb, &
           & ke, &
           & lb, &
           & le, &
-          & mpi_io_data_lag_bubbles_d0, &
-          & neighbor_ranks_d0, &
-          & neighbor_ranks_d1, &
           & offset_gammas_d0, &
           & offset_pi_infs_d0, &
           & offset_qvs_d0, &
           & offset_re_idx_d0, &
           & offset_re_idx_d1, &
-          & p_send_ids_d0, &
-          & p_send_ids_d1, &
-          & p_send_ids_d2, &
-          & pi_inf_sf_d0, &
-          & pi_inf_sf_d1, &
-          & ptil_d0, &
-          & ptil_d1, &
           & ql_d0, &
           & ql_d1, &
           & ql_d2, &
@@ -2629,55 +2365,29 @@ module m_dace_kernels_sweeps
           & re_d2, &
           & re_idx_d0, &
           & res_gs_d0, &
-          & res_vc_d0, &
-          & rho_sf_d0, &
-          & rho_sf_d1, &
-          & rsz1, &
-          & rsz2, &
-          & spbf_source_x_d0, &
-          & spbf_source_x_d1, &
-          & spbf_source_y_d0, &
-          & spbf_source_y_d1, &
           & vsrc_d0, &
           & vsrc_d1, &
           & vsrc_d2) &
         bind(C, name='__dace_init_mfc_dace_sweeps_z')
       import :: c_ptr, c_int, c_int64_t, c_double
       type(c_ptr) :: sweeps_init_z
-      integer(c_int64_t), value :: fd_coeff_x_d0
-      integer(c_int64_t), value :: fd_coeff_y_d0
-      integer(c_int64_t), value :: fd_coeff_z_d0
       integer(c_int64_t), value :: flux_d0
       integer(c_int64_t), value :: flux_d1
       integer(c_int64_t), value :: flux_d2
       integer(c_int64_t), value :: fsrc_d0
       integer(c_int64_t), value :: fsrc_d1
       integer(c_int64_t), value :: fsrc_d2
-      integer(c_int64_t), value :: gamma_sf_d0
-      integer(c_int64_t), value :: gamma_sf_d1
-      integer(c_int64_t), value :: ib_neighbor_ranks_d0
-      integer(c_int64_t), value :: ib_neighbor_ranks_d1
       integer(c_int), value :: jb
       integer(c_int), value :: je
       integer(c_int), value :: kb
       integer(c_int), value :: ke
       integer(c_int), value :: lb
       integer(c_int), value :: le
-      integer(c_int64_t), value :: mpi_io_data_lag_bubbles_d0
-      integer(c_int64_t), value :: neighbor_ranks_d0
-      integer(c_int64_t), value :: neighbor_ranks_d1
       integer(c_int64_t), value :: offset_gammas_d0
       integer(c_int64_t), value :: offset_pi_infs_d0
       integer(c_int64_t), value :: offset_qvs_d0
       integer(c_int64_t), value :: offset_re_idx_d0
       integer(c_int64_t), value :: offset_re_idx_d1
-      integer(c_int64_t), value :: p_send_ids_d0
-      integer(c_int64_t), value :: p_send_ids_d1
-      integer(c_int64_t), value :: p_send_ids_d2
-      integer(c_int64_t), value :: pi_inf_sf_d0
-      integer(c_int64_t), value :: pi_inf_sf_d1
-      integer(c_int64_t), value :: ptil_d0
-      integer(c_int64_t), value :: ptil_d1
       integer(c_int64_t), value :: ql_d0
       integer(c_int64_t), value :: ql_d1
       integer(c_int64_t), value :: ql_d2
@@ -2689,15 +2399,8 @@ module m_dace_kernels_sweeps
       integer(c_int64_t), value :: re_d2
       integer(c_int64_t), value :: re_idx_d0
       integer(c_int64_t), value :: res_gs_d0
-      integer(c_int64_t), value :: res_vc_d0
-      integer(c_int64_t), value :: rho_sf_d0
-      integer(c_int64_t), value :: rho_sf_d1
       integer(c_int), value :: rsz1
       integer(c_int), value :: rsz2
-      integer(c_int64_t), value :: spbf_source_x_d0
-      integer(c_int64_t), value :: spbf_source_x_d1
-      integer(c_int64_t), value :: spbf_source_y_d0
-      integer(c_int64_t), value :: spbf_source_y_d1
       integer(c_int64_t), value :: vsrc_d0
       integer(c_int64_t), value :: vsrc_d1
       integer(c_int64_t), value :: vsrc_d2
@@ -2832,6 +2535,9 @@ contains
     type(c_ptr), save :: d_res_tab = c_null_ptr, d_ridx_tab = c_null_ptr
     real(c_double), target :: h_res_tab(4)
     integer(c_int), target :: h_ridx_tab(4)
+    type(c_ptr), save :: d_re_stage = c_null_ptr
+    integer(c_size_t), save :: cap_re_stage = 0_c_size_t
+    real(c_double), allocatable, target :: re_back(:)
     type(c_ptr), save :: d_re_dummy = c_null_ptr, d_tab_dummy = c_null_ptr
     integer(c_size_t), save :: cap_red = 0_c_size_t, cap_tab = 0_c_size_t
     type(c_ptr), save :: d_ql = c_null_ptr, d_qr = c_null_ptr
@@ -2943,8 +2649,9 @@ contains
     ! directions while the OpenACC path wrote it (the e2e catastrophe).
     ! rsz only gates the (2,2) table reads inside the kernel helper.
     if (allocated(re_avg_rsx_vf)) then
-      re_dev = acc_deviceptr_(c_loc(re_avg_rsx_vf(lbound(re_avg_rsx_vf, 1), &
-          & lbound(re_avg_rsx_vf, 2), lbound(re_avg_rsx_vf, 3), 1)))
+      call ensure_buf(d_re_stage, cap_re_stage, &
+                      int(size(re_avg_rsx_vf)*8, c_size_t), 're_stage')
+      re_dev = d_re_stage
       if (.not. c_associated(d_res_tab)) then
         ierr = cudaMalloc_(d_res_tab, 32_c_size_t)
         call chk(ierr, 'malloc res_gs table')
@@ -3045,41 +2752,101 @@ contains
       end if
       select case (dir_in)
       case (2)
-        state_sweeps(2) = sweeps_init_y( &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, e64, &
-          & nv64, e64, e64, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, int(jd(1), c_int), int(jd(2), c_int), int(jd(3), c_int), int(jd(4), c_int), int(jd(5), c_int), &
-          & int(jd(6), c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, &
-          & e64, nv64, e64, e64, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 2_c_int64_t, 2_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & int(rsz1, c_int), int(rsz2, c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & int(nvels_l, c_int64_t), e64, e64)
+        state_sweeps(2) = sweeps_init_y(nv64, &
+          & e64, &
+          & e64, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & int(jd(1), c_int), &
+          & int(jd(2), c_int), &
+          & int(jd(3), c_int), &
+          & int(jd(4), c_int), &
+          & int(jd(5), c_int), &
+          & int(jd(6), c_int), &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & re_e64, &
+          & re_e64, &
+          & re_e64, &
+          & 2_c_int64_t, &
+          & 2_c_int64_t, &
+          & int(nvels_l, c_int64_t), &
+          & e64, &
+          & e64)
       case (3)
-        state_sweeps(3) = sweeps_init_z( &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, e64, &
-          & nv64, e64, e64, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, int(jd(1), c_int), int(jd(2), c_int), int(jd(3), c_int), int(jd(4), c_int), int(jd(5), c_int), &
-          & int(jd(6), c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, &
-          & e64, nv64, e64, e64, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 2_c_int64_t, 2_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & int(rsz1, c_int), int(rsz2, c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & int(nvels_l, c_int64_t), e64, e64)
+        state_sweeps(3) = sweeps_init_z(nv64, &
+          & e64, &
+          & e64, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & int(jd(1), c_int), &
+          & int(jd(2), c_int), &
+          & int(jd(3), c_int), &
+          & int(jd(4), c_int), &
+          & int(jd(5), c_int), &
+          & int(jd(6), c_int), &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & re_e64, &
+          & re_e64, &
+          & re_e64, &
+          & 2_c_int64_t, &
+          & 2_c_int64_t, &
+          & int(nvels_l, c_int64_t), &
+          & e64, &
+          & e64)
       case default
-        state_sweeps(1) = sweeps_init_x( &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, e64, &
-          & nv64, e64, e64, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, int(jd(1), c_int), int(jd(2), c_int), int(jd(3), c_int), int(jd(4), c_int), int(jd(5), c_int), &
-          & int(jd(6), c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, &
-          & e64, nv64, e64, e64, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 2_c_int64_t, 2_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & int(rsz1, c_int), int(rsz2, c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & int(nvels_l, c_int64_t), e64, e64)
+        state_sweeps(1) = sweeps_init_x(nv64, &
+          & e64, &
+          & e64, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & int(jd(1), c_int), &
+          & int(jd(2), c_int), &
+          & int(jd(3), c_int), &
+          & int(jd(4), c_int), &
+          & int(jd(5), c_int), &
+          & int(jd(6), c_int), &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & re_e64, &
+          & re_e64, &
+          & re_e64, &
+          & 2_c_int64_t, &
+          & 2_c_int64_t, &
+          & int(nvels_l, c_int64_t), &
+          & e64, &
+          & e64)
       end select
       state_ext(dir_in) = ext
     end if
@@ -3087,199 +2854,1063 @@ contains
     select case (dir_in)
     case (2)
       call sweeps_run_y(state_sweeps(2), &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_flux, d_fsrc, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_gammas, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_pi_infs, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, re_dev, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_ql, d_qr, d_zeros, d_qvs, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, ridx_dev, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, rgs_dev, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_vsrc, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, e64, &
-          & nv64, e64, e64, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, int(jd(1), c_int), int(jd(2), c_int), int(jd(3), c_int), int(jd(4), c_int), int(jd(5), c_int), &
-          & int(jd(6), c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, &
-          & e64, nv64, e64, e64, re_e64, re_e64, &
-          & re_e64, 2_c_int64_t, 2_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & int(rsz1, c_int), int(rsz2, c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & int(nvels_l, c_int64_t), e64, e64)
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_flux, &
+          & d_fsrc, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_gammas, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_pi_infs, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & re_dev, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_ql, &
+          & d_qr, &
+          & d_zeros, &
+          & d_qvs, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & ridx_dev, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & rgs_dev, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_vsrc, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & int(jd(1), c_int), &
+          & int(jd(2), c_int), &
+          & int(jd(3), c_int), &
+          & int(jd(4), c_int), &
+          & int(jd(5), c_int), &
+          & int(jd(6), c_int), &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & re_e64, &
+          & re_e64, &
+          & re_e64, &
+          & 2_c_int64_t, &
+          & 2_c_int64_t, &
+          & int(rsz1, c_int), &
+          & int(rsz2, c_int), &
+          & int(nvels_l, c_int64_t), &
+          & e64, &
+          & e64)
     case (3)
       call sweeps_run_z(state_sweeps(3), &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_flux, d_fsrc, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_gammas, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_pi_infs, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, re_dev, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_ql, d_qr, d_zeros, d_qvs, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, ridx_dev, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, rgs_dev, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_vsrc, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, e64, &
-          & nv64, e64, e64, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, int(jd(1), c_int), int(jd(2), c_int), int(jd(3), c_int), int(jd(4), c_int), int(jd(5), c_int), &
-          & int(jd(6), c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, &
-          & e64, nv64, e64, e64, re_e64, re_e64, &
-          & re_e64, 2_c_int64_t, 2_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & int(rsz1, c_int), int(rsz2, c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & int(nvels_l, c_int64_t), e64, e64)
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_flux, &
+          & d_fsrc, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_gammas, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_pi_infs, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & re_dev, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_ql, &
+          & d_qr, &
+          & d_zeros, &
+          & d_qvs, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & ridx_dev, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & rgs_dev, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_vsrc, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & int(jd(1), c_int), &
+          & int(jd(2), c_int), &
+          & int(jd(3), c_int), &
+          & int(jd(4), c_int), &
+          & int(jd(5), c_int), &
+          & int(jd(6), c_int), &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & re_e64, &
+          & re_e64, &
+          & re_e64, &
+          & 2_c_int64_t, &
+          & 2_c_int64_t, &
+          & int(rsz1, c_int), &
+          & int(rsz2, c_int), &
+          & int(nvels_l, c_int64_t), &
+          & e64, &
+          & e64)
     case default
       call sweeps_run_x(state_sweeps(1), &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_flux, d_fsrc, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_gammas, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_pi_infs, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, re_dev, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_ql, d_qr, d_zeros, d_qvs, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, ridx_dev, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, rgs_dev, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_vsrc, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, e64, &
-          & nv64, e64, e64, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, int(jd(1), c_int), int(jd(2), c_int), int(jd(3), c_int), int(jd(4), c_int), int(jd(5), c_int), &
-          & int(jd(6), c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, nv64, e64, &
-          & e64, nv64, e64, e64, re_e64, re_e64, &
-          & re_e64, 2_c_int64_t, 2_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & int(rsz1, c_int), int(rsz2, c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-          & int(nvels_l, c_int64_t), e64, e64)
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_flux, &
+          & d_fsrc, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_gammas, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_pi_infs, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & re_dev, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_ql, &
+          & d_qr, &
+          & d_zeros, &
+          & d_qvs, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & ridx_dev, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & rgs_dev, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_vsrc, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & d_zeros, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & int(jd(1), c_int), &
+          & int(jd(2), c_int), &
+          & int(jd(3), c_int), &
+          & int(jd(4), c_int), &
+          & int(jd(5), c_int), &
+          & int(jd(6), c_int), &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & 1_c_int64_t, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & nv64, &
+          & e64, &
+          & e64, &
+          & re_e64, &
+          & re_e64, &
+          & re_e64, &
+          & 2_c_int64_t, &
+          & 2_c_int64_t, &
+          & int(rsz1, c_int), &
+          & int(rsz2, c_int), &
+          & int(nvels_l, c_int64_t), &
+          & e64, &
+          & e64)
     end select
     ierr = cudaDeviceSynchronize_(); call chk(ierr, 'sync')
 
@@ -3402,6 +4033,21 @@ contains
       end do
     end do
     !$acc end parallel loop
+
+    ! Copy the kernel's interface-Reynolds staging back to the host and
+    ! push it to the device copy the acc declare-create registered (the
+    ! acc viscous source consumes it on the acc stream).
+    if (allocated(re_avg_rsx_vf) .and. c_associated(d_re_stage)) then
+      if (.not. allocated(re_back) .or. size(re_back) /= size(re_avg_rsx_vf)) then
+        if (allocated(re_back)) deallocate (re_back)
+        allocate (re_back(size(re_avg_rsx_vf)))
+      end if
+      ierr = cudaMemcpy_(c_loc(re_back(1)), d_re_stage, &
+                         & int(size(re_avg_rsx_vf)*8, c_size_t), cpD2H)
+      call chk(ierr, 'D2H re_stage')
+      re_avg_rsx_vf = reshape(re_back, shape(re_avg_rsx_vf))
+      !$acc update device(re_avg_rsx_vf)
+    end if
 
     block
       logical :: dmp = .false.
