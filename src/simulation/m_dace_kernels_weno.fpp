@@ -31,7 +31,7 @@ module m_dace_kernels_weno
       type(c_ptr) :: acc_deviceptr_
       type(c_ptr), value :: hostptr
     end function
-    function mfc_dace_weno_x_init(d_cbl_x_d0, d_cbr_x_d0, m, &
+    function mfc_dace_weno_x_init(d_cbl_x_d0, d_cbr_x_d0, jb, je, kb, ke, lb, le, &
                                   poly_coef_cbl_x_d0, poly_coef_cbl_x_d1, &
                                   poly_coef_cbr_x_d0, poly_coef_cbr_x_d1, &
                                   v_rs_d0, v_rs_d1, v_rs_d2, &
@@ -41,7 +41,7 @@ module m_dace_kernels_weno
       import :: c_ptr, c_int, c_int64_t
       type(c_ptr) :: mfc_dace_weno_x_init
       integer(c_int64_t), value :: d_cbl_x_d0, d_cbr_x_d0
-      integer(c_int), value :: m
+      integer(c_int), value :: jb, je, kb, ke, lb, le
       integer(c_int64_t), value :: poly_coef_cbl_x_d0, poly_coef_cbl_x_d1
       integer(c_int64_t), value :: poly_coef_cbr_x_d0, poly_coef_cbr_x_d1
       integer(c_int64_t), value :: v_rs_d0, v_rs_d1, v_rs_d2
@@ -55,7 +55,7 @@ module m_dace_kernels_weno
     end function
     subroutine mfc_dace_weno_x_run(state, d_cbl_x, d_cbr_x, poly_coef_cbl_x, &
                                    poly_coef_cbr_x, v_rs, vl, vr, &
-                                   d_cbl_x_d0, d_cbr_x_d0, m, &
+                                   d_cbl_x_d0, d_cbr_x_d0, jb, je, kb, ke, lb, le, &
                                    poly_coef_cbl_x_d0, poly_coef_cbl_x_d1, &
                                    poly_coef_cbr_x_d0, poly_coef_cbr_x_d1, &
                                    v_rs_d0, v_rs_d1, v_rs_d2, &
@@ -67,7 +67,7 @@ module m_dace_kernels_weno
       type(c_ptr), value :: d_cbl_x, d_cbr_x, poly_coef_cbl_x, poly_coef_cbr_x
       type(c_ptr), value :: v_rs, vl, vr
       integer(c_int64_t), value :: d_cbl_x_d0, d_cbr_x_d0
-      integer(c_int), value :: m
+      integer(c_int), value :: jb, je, kb, ke, lb, le
       integer(c_int64_t), value :: poly_coef_cbl_x_d0, poly_coef_cbl_x_d1
       integer(c_int64_t), value :: poly_coef_cbr_x_d0, poly_coef_cbr_x_d1
       integer(c_int64_t), value :: v_rs_d0, v_rs_d1, v_rs_d2
@@ -82,7 +82,7 @@ module m_dace_kernels_weno
   integer, parameter :: BAKED_BUFF_SIZE = MFC_DACE_BAKED_BUFF
 
   type(c_ptr), save :: state_weno = c_null_ptr
-  integer, save :: state_m = -1, state_ext = -1
+  integer, save :: state_b(6) = -1, state_ext = -1
 
 contains
 
@@ -151,12 +151,13 @@ contains
   !! declare-created device-resident MFC arrays; the kernel addresses
   !! their raw F-order flat memory directly, so the only work here is
   !! the pointer extraction and the (m, ext)-keyed init cache.
-  subroutine s_dace_weno_x(v_rs, pcL, pcR, dL, dR, vL, vR, m_in)
+  subroutine s_dace_weno_x(v_rs, pcL, pcR, dL, dR, vL, vR, jb_in, je_in, &
+                           & kb_in, ke_in, lb_in, le_in)
     real(wp), dimension(:, :, :, :), intent(in), target :: v_rs
     real(wp), dimension(:, :, :), intent(in), target :: pcL, pcR
     real(wp), dimension(:, :), intent(in), target :: dL, dR
     real(wp), dimension(:, :, :, :), intent(inout), target :: vL, vR
-    integer, intent(in) :: m_in
+    integer, intent(in) :: jb_in, je_in, kb_in, ke_in, lb_in, le_in
 
     integer :: ext, d0pc, d1pc, d0d
     type(c_ptr) :: vrs_dev, vl_dev, vr_dev, pcl_dev, pcr_dev, dl_dev, dr_dev
@@ -194,20 +195,22 @@ contains
       error stop 1
     end if
 
-    if (.not. c_associated(state_weno) .or. state_m /= m_in .or. &
-        & state_ext /= ext) then
+    if (.not. c_associated(state_weno) .or. any(state_b /= [jb_in, je_in, &
+        & kb_in, ke_in, lb_in, le_in]) .or. state_ext /= ext) then
       if (c_associated(state_weno)) then
         ierr = mfc_dace_weno_x_exit(state_weno)
         state_weno = c_null_ptr
       end if
       state_weno = mfc_dace_weno_x_init( &
-        & int(d0d, c_int64_t), int(d0d, c_int64_t), int(m_in, c_int), &
+        & int(d0d, c_int64_t), int(d0d, c_int64_t), &
+        & int(jb_in, c_int), int(je_in, c_int), int(kb_in, c_int), &
+        & int(ke_in, c_int), int(lb_in, c_int), int(le_in, c_int), &
         & int(d0pc, c_int64_t), int(d1pc, c_int64_t), &
         & int(d0pc, c_int64_t), int(d1pc, c_int64_t), &
         & int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), &
         & int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), &
         & int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t))
-      state_m = m_in
+      state_b = [jb_in, je_in, kb_in, ke_in, lb_in, le_in]
       state_ext = ext
     end if
 
@@ -218,7 +221,9 @@ contains
     call mfc_dace_weno_x_run(state_weno, dl_dev, dr_dev, pcl_dev, pcr_dev, &
                              & vrs_dev, vl_dev, vr_dev, &
                              & int(d0d, c_int64_t), int(d0d, c_int64_t), &
-                             & int(m_in, c_int), &
+                             & int(jb_in, c_int), int(je_in, c_int), &
+                             & int(kb_in, c_int), int(ke_in, c_int), &
+                             & int(lb_in, c_int), int(le_in, c_int), &
                              & int(d0pc, c_int64_t), int(d1pc, c_int64_t), &
                              & int(d0pc, c_int64_t), int(d1pc, c_int64_t), &
                              & int(ext, c_int64_t), int(ext, c_int64_t), &
@@ -241,12 +246,13 @@ module m_dace_kernels_weno
   private
   public :: s_dace_weno_x, weno_dace_contract, weno_dace_mode, weno_dace_dirs
 contains
-  subroutine s_dace_weno_x(v_rs, pcL, pcR, dL, dR, vL, vR, m_in)
+  subroutine s_dace_weno_x(v_rs, pcL, pcR, dL, dR, vL, vR, jb_in, je_in, &
+                           & kb_in, ke_in, lb_in, le_in)
     real(wp), dimension(:, :, :, :), intent(in) :: v_rs
     real(wp), dimension(:, :, :), intent(in) :: pcL, pcR
     real(wp), dimension(:, :), intent(in) :: dL, dR
     real(wp), dimension(:, :, :, :), intent(inout) :: vL, vR
-    integer, intent(in) :: m_in
+    integer, intent(in) :: jb_in, je_in, kb_in, ke_in, lb_in, le_in
     ! No-op stub: MFC_DACE builds only.
   end subroutine s_dace_weno_x
   function weno_dace_contract() result(c)

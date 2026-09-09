@@ -30,14 +30,14 @@ module m_dace_kernels_conv
       integer(c_size_t), value :: count
       integer(c_int), value :: kind
     end function
+    function cudaDeviceSynchronize_() bind(C, name='cudaDeviceSynchronize')
+      import :: c_int
+      integer(c_int) :: cudaDeviceSynchronize_
+    end function
     function acc_deviceptr_(hostptr) bind(C, name='acc_deviceptr')
       import :: c_ptr
       type(c_ptr) :: acc_deviceptr_
       type(c_ptr), value :: hostptr
-    end function
-    function cudaDeviceSynchronize_() bind(C, name='cudaDeviceSynchronize')
-      import :: c_int
-      integer(c_int) :: cudaDeviceSynchronize_
     end function
   end interface
 
@@ -358,26 +358,16 @@ module m_dace_kernels_conv
           & z_cb, &
           & z_cc, &
           & e_e_in, &
-          & fd_coeff_x_d0, &
-          & fd_coeff_y_d0, &
-          & fd_coeff_z_d0, &
-          & ib_neighbor_ranks_d0, &
-          & ib_neighbor_ranks_d1, &
           & jb, &
           & je, &
           & kb, &
           & ke, &
           & lb, &
           & le, &
-          & mpi_io_data_lag_bubbles_d0, &
-          & neighbor_ranks_d0, &
-          & neighbor_ranks_d1, &
           & offset_gammas_d0, &
           & offset_pi_infs_d0, &
           & offset_qvs_d0, &
           & pres_mag, &
-          & ptil_d0, &
-          & ptil_d1, &
           & qc1_d0, &
           & qc1_d1, &
           & qc2_d0, &
@@ -409,15 +399,7 @@ module m_dace_kernels_conv
           & qp7_d0, &
           & qp7_d1, &
           & qp8_d0, &
-          & qp8_d1, &
-          & qt_d0, &
-          & qt_d1, &
-          & re_idx_d0, &
-          & res_vc_d0, &
-          & spbf_source_x_d0, &
-          & spbf_source_x_d1, &
-          & spbf_source_y_d0, &
-          & spbf_source_y_d1) &
+          & qp8_d1) &
         bind(C, name='__program_mfc_dace_conv')
       import :: c_ptr, c_int, c_int64_t, c_double
       type(c_ptr), value :: state
@@ -729,26 +711,16 @@ module m_dace_kernels_conv
       type(c_ptr), value :: z_cb
       type(c_ptr), value :: z_cc
       real(c_double), value :: e_e_in
-      integer(c_int64_t), value :: fd_coeff_x_d0
-      integer(c_int64_t), value :: fd_coeff_y_d0
-      integer(c_int64_t), value :: fd_coeff_z_d0
-      integer(c_int64_t), value :: ib_neighbor_ranks_d0
-      integer(c_int64_t), value :: ib_neighbor_ranks_d1
       integer(c_int), value :: jb
       integer(c_int), value :: je
       integer(c_int), value :: kb
       integer(c_int), value :: ke
       integer(c_int), value :: lb
       integer(c_int), value :: le
-      integer(c_int64_t), value :: mpi_io_data_lag_bubbles_d0
-      integer(c_int64_t), value :: neighbor_ranks_d0
-      integer(c_int64_t), value :: neighbor_ranks_d1
       integer(c_int64_t), value :: offset_gammas_d0
       integer(c_int64_t), value :: offset_pi_infs_d0
       integer(c_int64_t), value :: offset_qvs_d0
       real(c_double), value :: pres_mag
-      integer(c_int64_t), value :: ptil_d0
-      integer(c_int64_t), value :: ptil_d1
       integer(c_int64_t), value :: qc1_d0
       integer(c_int64_t), value :: qc1_d1
       integer(c_int64_t), value :: qc2_d0
@@ -781,38 +753,18 @@ module m_dace_kernels_conv
       integer(c_int64_t), value :: qp7_d1
       integer(c_int64_t), value :: qp8_d0
       integer(c_int64_t), value :: qp8_d1
-      integer(c_int64_t), value :: qt_d0
-      integer(c_int64_t), value :: qt_d1
-      integer(c_int64_t), value :: re_idx_d0
-      integer(c_int64_t), value :: res_vc_d0
-      integer(c_int64_t), value :: spbf_source_x_d0
-      integer(c_int64_t), value :: spbf_source_x_d1
-      integer(c_int64_t), value :: spbf_source_y_d0
-      integer(c_int64_t), value :: spbf_source_y_d1
     end subroutine
 
     function conv_init(&
-          & e_e_in, &
-          & fd_coeff_x_d0, &
-          & fd_coeff_y_d0, &
-          & fd_coeff_z_d0, &
-          & ib_neighbor_ranks_d0, &
-          & ib_neighbor_ranks_d1, &
           & jb, &
           & je, &
           & kb, &
           & ke, &
           & lb, &
           & le, &
-          & mpi_io_data_lag_bubbles_d0, &
-          & neighbor_ranks_d0, &
-          & neighbor_ranks_d1, &
           & offset_gammas_d0, &
           & offset_pi_infs_d0, &
           & offset_qvs_d0, &
-          & pres_mag, &
-          & ptil_d0, &
-          & ptil_d1, &
           & qc1_d0, &
           & qc1_d1, &
           & qc2_d0, &
@@ -844,39 +796,19 @@ module m_dace_kernels_conv
           & qp7_d0, &
           & qp7_d1, &
           & qp8_d0, &
-          & qp8_d1, &
-          & qt_d0, &
-          & qt_d1, &
-          & re_idx_d0, &
-          & res_vc_d0, &
-          & spbf_source_x_d0, &
-          & spbf_source_x_d1, &
-          & spbf_source_y_d0, &
-          & spbf_source_y_d1) &
+          & qp8_d1) &
         bind(C, name='__dace_init_mfc_dace_conv')
       import :: c_ptr, c_int, c_int64_t, c_double
       type(c_ptr) :: conv_init
-      real(c_double), value :: e_e_in
-      integer(c_int64_t), value :: fd_coeff_x_d0
-      integer(c_int64_t), value :: fd_coeff_y_d0
-      integer(c_int64_t), value :: fd_coeff_z_d0
-      integer(c_int64_t), value :: ib_neighbor_ranks_d0
-      integer(c_int64_t), value :: ib_neighbor_ranks_d1
       integer(c_int), value :: jb
       integer(c_int), value :: je
       integer(c_int), value :: kb
       integer(c_int), value :: ke
       integer(c_int), value :: lb
       integer(c_int), value :: le
-      integer(c_int64_t), value :: mpi_io_data_lag_bubbles_d0
-      integer(c_int64_t), value :: neighbor_ranks_d0
-      integer(c_int64_t), value :: neighbor_ranks_d1
       integer(c_int64_t), value :: offset_gammas_d0
       integer(c_int64_t), value :: offset_pi_infs_d0
       integer(c_int64_t), value :: offset_qvs_d0
-      real(c_double), value :: pres_mag
-      integer(c_int64_t), value :: ptil_d0
-      integer(c_int64_t), value :: ptil_d1
       integer(c_int64_t), value :: qc1_d0
       integer(c_int64_t), value :: qc1_d1
       integer(c_int64_t), value :: qc2_d0
@@ -909,14 +841,6 @@ module m_dace_kernels_conv
       integer(c_int64_t), value :: qp7_d1
       integer(c_int64_t), value :: qp8_d0
       integer(c_int64_t), value :: qp8_d1
-      integer(c_int64_t), value :: qt_d0
-      integer(c_int64_t), value :: qt_d1
-      integer(c_int64_t), value :: re_idx_d0
-      integer(c_int64_t), value :: res_vc_d0
-      integer(c_int64_t), value :: spbf_source_x_d0
-      integer(c_int64_t), value :: spbf_source_x_d1
-      integer(c_int64_t), value :: spbf_source_y_d0
-      integer(c_int64_t), value :: spbf_source_y_d1
     end function
 
     function conv_exit(state) bind(C, name='__dace_exit_mfc_dace_conv')
@@ -964,14 +888,12 @@ contains
     type(scalar_field), dimension(:), intent(inout) :: qK_prim_vf
     type(int_bounds_info), dimension(1:3), intent(in) :: ibounds
 
+    real(c_double), pointer :: fp(:, :, :)
     real(c_double), allocatable, target :: gbuf(:), pbuf(:), vbuf(:)
-    type(c_ptr) :: qptr(8), pptr(8)
-    real(wp), pointer :: fp(:,:,:)
-    integer :: ext, i
-    integer(c_int64_t) :: e64
-    integer(c_size_t) :: bytes_f, bytes_t
+    integer :: ext, i, nvars
     integer(c_int) :: ierr
-    integer(c_int64_t) :: jd(6)
+    integer(c_int64_t) :: e64, nv64, jd(6)
+    type(c_ptr) :: qptr(8), pptr(8)
     real(c_double), allocatable, target, save :: zbuf(:)
     integer, save :: zbuf_rank = 0
     type(c_ptr), save :: d_zeros = c_null_ptr
@@ -980,54 +902,12 @@ contains
     type(c_ptr), save :: state_conv = c_null_ptr
     integer, save :: state_ext = -1, state_nvars = -1
 
-    ! P2/T2.4 DIRECT MFC-LAYOUT DISPATCH: the eqn dim is unrolled in the
-    ! kernel (17 plain (0:,0:,0:) args), so the shim passes raw device
-    ! pointers to the field bases — no staging buffers, no transposes.
+    nvars = sys_size
     ext = size(qK_cons_vf(1)%sf, 1)
     if (buff_size /= BAKED_BUFF_SIZE) then
       print *, 'm_dace_kernels: conv kernel baked with buff_size=', &
                BAKED_BUFF_SIZE, ' but case uses', buff_size
       error stop 1
-    end if
-
-    ! live physics arrays
-    if (.not. allocated(gbuf) .or. size(gbuf) < num_fluids) then
-      if (allocated(gbuf)) deallocate (gbuf, pbuf, vbuf)
-      allocate(gbuf(num_fluids), pbuf(num_fluids), vbuf(max(num_fluids, 2)))
-      gbuf = real(gammas(1:num_fluids), c_double)
-      pbuf = real(pi_infs(1:num_fluids), c_double)
-      vbuf = 0.0_c_double
-      if (allocated(qvs)) then
-        vbuf(1:min(num_fluids, size(qvs))) = &
-            real(qvs(1:min(num_fluids, size(qvs))), c_double)
-      end if
-      if (c_associated(d_gammas)) then
-        ierr = cudaFree_(d_gammas); ierr = cudaFree_(d_pi_infs)
-        ierr = cudaFree_(d_qvs)
-        d_gammas = c_null_ptr
-      end if
-    end if
-
-    if (zbuf_rank == 0) then
-      ! The kernel's host preamble DEREFERENCES the config arrays on the
-      ! CPU before the launch — the dead config arrays must be HOST memory.
-      allocate(zbuf(8192)); zbuf = 0.0_c_double
-      d_zeros = c_loc(zbuf)
-      zbuf_rank = 1
-    end if
-    if (.not. c_associated(d_gammas)) then
-      ierr = cudaMalloc_(d_gammas, int(num_fluids*8, c_size_t))
-      call chk(ierr, 'malloc gammas')
-      ierr = cudaMemcpy_(d_gammas, c_loc(gbuf), int(num_fluids*8, c_size_t), cpH2D)
-      call chk(ierr, 'H2D gammas')
-      ierr = cudaMalloc_(d_pi_infs, int(num_fluids*8, c_size_t))
-      call chk(ierr, 'malloc pi_infs')
-      ierr = cudaMemcpy_(d_pi_infs, c_loc(pbuf), int(num_fluids*8, c_size_t), cpH2D)
-      call chk(ierr, 'H2D pi_infs')
-      ierr = cudaMalloc_(d_qvs, int(max(num_fluids, 2)*8, c_size_t))
-      call chk(ierr, 'malloc qvs')
-      ierr = cudaMemcpy_(d_qvs, c_loc(vbuf), int(max(num_fluids, 2)*8, c_size_t), cpH2D)
-      call chk(ierr, 'H2D qvs')
     end if
 
     ! DACE->DACE CROSS-LIB SYNC: the rk lib writes q_cons on its own
@@ -1050,7 +930,52 @@ contains
       end if
     end do
 
-    ! loop bounds: raw [ibounds(d)%beg, %end] -> 0-based [.. + buff_size]
+    if (zbuf_rank == 0) then
+      ! The kernel's host preamble DEREFERENCES the config arrays on the CPU
+      ! (scal_adv_n = adv_n[0], ...) before the launch — the dead config
+      ! arrays must be HOST memory (the T2.1 validation likewise passed them
+      ! as host arrays; only 70 of 289 arrays are device-resident).  The two
+      ! dead arrays that reach the kernel as pointers (bubrs_vc, weight) are
+      ! never read on the baked live path, so a host buffer is safe for them
+      ! too.
+      allocate(zbuf(8192)); zbuf = 0.0_c_double
+      d_zeros = c_loc(zbuf)
+      zbuf_rank = 1
+    end if
+
+    ! live physics arrays (the validated live path reads only these)
+    if (.not. allocated(gbuf) .or. size(gbuf) < num_fluids) then
+      if (allocated(gbuf)) deallocate (gbuf, pbuf, vbuf)
+      allocate(gbuf(num_fluids), pbuf(num_fluids), vbuf(max(num_fluids, 2)))
+      gbuf = real(gammas(1:num_fluids), c_double)
+      pbuf = real(pi_infs(1:num_fluids), c_double)
+      vbuf = 0.0_c_double
+      if (allocated(qvs)) then
+        vbuf(1:min(num_fluids, size(qvs))) = &
+            real(qvs(1:min(num_fluids, size(qvs))), c_double)
+      end if
+      if (c_associated(d_gammas)) then
+        ierr = cudaFree_(d_gammas); ierr = cudaFree_(d_pi_infs)
+        ierr = cudaFree_(d_qvs)
+        d_gammas = c_null_ptr
+      end if
+    end if
+    if (.not. c_associated(d_gammas)) then
+      ierr = cudaMalloc_(d_gammas, int(num_fluids*8, c_size_t))
+      call chk(ierr, 'malloc gammas')
+      ierr = cudaMemcpy_(d_gammas, c_loc(gbuf), int(num_fluids*8, c_size_t), cpH2D)
+      call chk(ierr, 'H2D gammas')
+      ierr = cudaMalloc_(d_pi_infs, int(num_fluids*8, c_size_t))
+      call chk(ierr, 'malloc pi_infs')
+      ierr = cudaMemcpy_(d_pi_infs, c_loc(pbuf), int(num_fluids*8, c_size_t), cpH2D)
+      call chk(ierr, 'H2D pi_infs')
+      ierr = cudaMalloc_(d_qvs, int(max(num_fluids, 2)*8, c_size_t))
+      call chk(ierr, 'malloc qvs')
+      ierr = cudaMemcpy_(d_qvs, c_loc(vbuf), int(max(num_fluids, 2)*8, c_size_t), cpH2D)
+      call chk(ierr, 'H2D qvs')
+    end if
+
+    ! loop bounds: raw [ibounds(d)%beg, %end] -> flat 0-based [+ buff_size]
     jd(1) = int(ibounds(1)%beg + buff_size, c_int64_t)
     jd(2) = int(ibounds(1)%end + buff_size, c_int64_t)
     jd(3) = int(ibounds(2)%beg + buff_size, c_int64_t)
@@ -1058,162 +983,83 @@ contains
     jd(5) = int(ibounds(3)%beg + buff_size, c_int64_t)
     jd(6) = int(ibounds(3)%end + buff_size, c_int64_t)
     e64 = int(ext, c_int64_t)
+    nv64 = int(nvars, c_int64_t)
 
-    if (state_ext /= ext) then
+    if (state_ext /= ext .or. state_nvars /= nvars) then
       if (c_associated(state_conv)) then
         ierr = conv_exit(state_conv)
       end if
       state_conv = conv_init( &
-      & 0.0_c_double, 1_c_int64_t, 1_c_int64_t, &
-      & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-      & int(jd(1), c_int), int(jd(2), c_int), int(jd(3), c_int), &
-      & int(jd(4), c_int), int(jd(5), c_int), int(jd(6), c_int), &
-      & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-      & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-      & 0.0_c_double, 1_c_int64_t, 1_c_int64_t, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, 1_c_int64_t, 1_c_int64_t, &
-      & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-      & 1_c_int64_t &
-      )
-      state_ext = ext
+          & int(jd(1), c_int), int(jd(2), c_int), int(jd(3), c_int), int(jd(4), c_int), int(jd(5), c_int), int(jd(6), c_int), &
+          & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, e64, e64, e64, &
+          & e64, e64, e64, e64, e64, e64, &
+          & e64, e64, e64, e64, e64, e64, &
+          & e64, e64, e64, e64, e64, e64, &
+          & e64, e64, e64, e64, e64, e64, &
+          & e64, e64, e64, e64, e64)
+      state_ext = ext; state_nvars = nvars
     end if
 
     call conv_run(state_conv, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_gammas, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_pi_infs, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, qptr(1), &
-      & qptr(2), qptr(3), qptr(4), &
-      & qptr(5), qptr(6), qptr(7), &
-      & qptr(8), pptr(1), pptr(2), &
-      & pptr(3), pptr(4), pptr(5), &
-      & pptr(6), pptr(7), pptr(8), &
-      & d_zeros, d_zeros, d_qvs, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, d_zeros, d_zeros, &
-      & d_zeros, 0.0_c_double, 1_c_int64_t, &
-      & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-      & 1_c_int64_t, int(jd(1), c_int), int(jd(2), c_int), &
-      & int(jd(3), c_int), int(jd(4), c_int), int(jd(5), c_int), &
-      & int(jd(6), c_int), 1_c_int64_t, 1_c_int64_t, &
-      & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-      & 1_c_int64_t, 0.0_c_double, 1_c_int64_t, &
-      & 1_c_int64_t, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, e64, &
-      & e64, e64, 1_c_int64_t, &
-      & 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, &
-      & 1_c_int64_t, 1_c_int64_t &
-      )
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_gammas, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_pi_infs, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, qptr(1), &
+          & qptr(2), qptr(3), qptr(4), qptr(5), qptr(6), qptr(7), &
+          & qptr(8), pptr(1), pptr(2), pptr(3), pptr(4), pptr(5), &
+          & pptr(6), pptr(7), pptr(8), d_zeros, d_zeros, d_qvs, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, d_zeros, &
+          & d_zeros, 0.0_c_double, int(jd(1), c_int), int(jd(2), c_int), int(jd(3), c_int), int(jd(4), c_int), &
+          & int(jd(5), c_int), int(jd(6), c_int), 1_c_int64_t, 1_c_int64_t, 1_c_int64_t, 0.0_c_double, &
+          & e64, e64, e64, e64, e64, e64, &
+          & e64, e64, e64, e64, e64, e64, &
+          & e64, e64, e64, e64, e64, e64, &
+          & e64, e64, e64, e64, e64, e64, &
+          & e64, e64, e64, e64, e64, e64, &
+          & e64, e64)
     ! (lib stream-syncs internally; no unpack — the kernel wrote the
     ! device prim fields directly)
   end subroutine s_dace_convert

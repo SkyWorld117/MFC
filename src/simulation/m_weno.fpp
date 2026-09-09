@@ -1100,18 +1100,15 @@ contains
 #if defined(MFC_DACE) && !defined(MFC_DACE_WENO_OFF)
                         if (weno_dace_dirs(${WENO_DIR}$) .and. &
                             & weno_dace_mode() >= 1 .and. weno_dace_contract() .and. &
-                            & v_size == 8 .and. &
-                            & uniform_grid(${WENO_DIR}$) .and. is1_weno%beg == 0 .and. &
-                            & is2_weno%beg == 0 .and. is3_weno%beg == 0) then
+                            & v_size == 8 .and. uniform_grid(${WENO_DIR}$)) then
                             call s_dace_weno_x(v_rs_weno, poly_coef_cbL_${XYZ}$, poly_coef_cbR_${XYZ}$, &
                                                & d_cbL_${XYZ}$, d_cbR_${XYZ}$, vL_rs_vf_x, vR_rs_vf_x, &
-                                               & is1_weno%end)
+                                               & is1_weno%beg, is1_weno%end, is2_weno%beg, &
+                                               & is2_weno%end, is3_weno%beg, is3_weno%end)
                         end if
                         if (.not. (weno_dace_dirs(${WENO_DIR}$) .and. &
                                    & weno_dace_mode() == 1 .and. weno_dace_contract() .and. &
-                                   & v_size == 8 .and. &
-                                   & uniform_grid(${WENO_DIR}$) .and. is1_weno%beg == 0 .and. &
-                                   & is2_weno%beg == 0 .and. is3_weno%beg == 0)) then
+                                   & v_size == 8 .and. uniform_grid(${WENO_DIR}$))) then
 #else
                         if (.true.) then
 #endif
