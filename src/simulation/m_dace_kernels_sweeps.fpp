@@ -2641,7 +2641,14 @@ contains
     ! reads) and the RE writes land in a dummy device buffer.
     call ensure_buf(d_re_dummy, cap_red, int(ext**3*2*8, c_size_t), 're_dummy')
     call ensure_buf(d_tab_dummy, cap_tab, int(4*8, c_size_t), 'tab_dummy')
-    re_e64 = merge(int(size(re_avg_rsx_vf, 1), c_int64_t), e64, &
+    ! The kernel writes RE(j0+1, k0+1, l0+1, i): position = raw - jb + 1 =
+    ! (raw+1) + 1 for jb=-1, i.e. ONE past the rsx position (raw+1).  The
+    ! staging strides must therefore be rsx_ext + 1 and the staging
+    ! (rsx_ext+1)^3*2 so the kernel's writes stay in bounds and unbiased;
+    ! the copy-back shifts by -1 per axis (the fix for the e2e viscous
+    ! NaN: the old truncated linear copy delivered raw-5..27 values,
+    ! leaving the corner cells stale-zero -> the vsrc divided by zero).
+    re_e64 = merge(int(size(re_avg_rsx_vf, 1) + 1, c_int64_t), e64, &
                    allocated(re_avg_rsx_vf))
     ! re_avg is ALWAYS delivered when allocated: the Cartesian viscous
     ! source reads Re_shear = Re_avg_rsx_vf(...) whenever viscous, even
@@ -2650,7 +2657,8 @@ contains
     ! rsz only gates the (2,2) table reads inside the kernel helper.
     if (allocated(re_avg_rsx_vf)) then
       call ensure_buf(d_re_stage, cap_re_stage, &
-                      int(size(re_avg_rsx_vf)*8, c_size_t), 're_stage')
+                      int((size(re_avg_rsx_vf, 1) + 1)**3*2*8, c_size_t), &
+                      're_stage')
       re_dev = d_re_stage
       if (.not. c_associated(d_res_tab)) then
         ierr = cudaMalloc_(d_res_tab, 32_c_size_t)
@@ -3915,6 +3923,7 @@ contains
     ierr = cudaDeviceSynchronize_(); call chk(ierr, 'sync')
 
 
+
     ! unpack the fluxes ON DEVICE via RAW DEVICE POINTERS: the kernel output
     ! for raw face s lives at 0-based s + buff_size - 1 (the pack's
     ! convention).  The assumed-shape write path (flux_rsx(...) through the
@@ -4038,14 +4047,47 @@ contains
     ! push it to the device copy the acc declare-create registered (the
     ! acc viscous source consumes it on the acc stream).
     if (allocated(re_avg_rsx_vf) .and. c_associated(d_re_stage)) then
-      if (.not. allocated(re_back) .or. size(re_back) /= size(re_avg_rsx_vf)) then
+      if (.not. allocated(re_back) .or. size(re_back) /= &
+          & (size(re_avg_rsx_vf, 1) + 1)**3*2) then
         if (allocated(re_back)) deallocate (re_back)
-        allocate (re_back(size(re_avg_rsx_vf)))
+        allocate (re_back((size(re_avg_rsx_vf, 1) + 1)**3*2))
       end if
       ierr = cudaMemcpy_(c_loc(re_back(1)), d_re_stage, &
-                         & int(size(re_avg_rsx_vf)*8, c_size_t), cpD2H)
+                         & int(size(re_back)*8, c_size_t), cpD2H)
       call chk(ierr, 'D2H re_stage')
-      re_avg_rsx_vf = reshape(re_back, shape(re_avg_rsx_vf))
+      ! The staging = the kernel's RE(j0+1, k0+1, l0+1, i) window with the
+      ! TU's (j,k,l) = (sweep-face, dim2, dim3) and j0 = raw - face_beg:
+      !   dir 1: stag dims = (x_face+2, y+1, z+1) -> rsx(x,y,z) = stag(x+1, y, z)
+      !   dir 2: stag dims = (y_face+2, x+1, z+1) -> rsx(x,y,z) = stag(y+1, x, z)
+      !   dir 3: stag dims = (z_face+2, y+1, x+1) -> rsx(x,y,z) = stag(z+1, y, x)
+      block
+        integer :: rr, qq, pp, ii, sf_
+        integer :: e1, e2
+        e1 = size(re_avg_rsx_vf, 1)
+        e2 = e1 + 1
+        do ii = 1, 2
+          do rr = 0, e1 - 1
+            do qq = 0, e1 - 1
+              do pp = 0, e1 - 1
+                ! The TU loops run on the RAW bounds (jd) and write
+                ! RE(j+1,k+1,l+1): the staging position = raw+1 per axis =
+                ! the rsx position exactly.  Staging = C-order with the TU's
+                ! (j,k,l) = (sweep-face, dim2, dim3): dim1 outermost, dim3
+                ! fastest; the rsx = F-order.
+                select case (dir_in)
+                case (2)
+                  sf_ = qq*e2*e2 + pp*e2 + rr + e2*e2*e2*(ii - 1)
+                case (3)
+                  sf_ = rr*e2*e2 + qq*e2 + pp + e2*e2*e2*(ii - 1)
+                case default
+                  sf_ = pp*e2*e2 + qq*e2 + rr + e2*e2*e2*(ii - 1)
+                end select
+                re_avg_rsx_vf(pp - 1, qq - 1, rr - 1, ii) = re_back(sf_ + 1)
+              end do
+            end do
+          end do
+        end do
+      end block
       !$acc update device(re_avg_rsx_vf)
     end if
 

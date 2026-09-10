@@ -8,8 +8,8 @@
 !! fall back to the native OpenACC kernel (the transposed-index variants
 !! are a follow-up).
 module m_dace_kernels_vsrc
-  use, intrinsic :: iso_c_binding, only: c_ptr, c_int, c_int64_t, &
-                                         c_associated, c_loc, c_null_ptr
+  use, intrinsic :: iso_c_binding, only: c_ptr, c_int, c_int64_t, c_size_t, &
+                                         c_double, c_associated, c_loc, c_null_ptr
   use m_derived_types
   use m_global_parameters
   implicit none
@@ -26,92 +26,72 @@ module m_dace_kernels_vsrc
       type(c_ptr) :: acc_deviceptr_
       type(c_ptr), value :: hostptr
     end function
-    function vsrc_init( &
-        dvl_dx1_d0, dvl_dx1_d1, dvl_dx2_d0, dvl_dx2_d1, dvl_dx3_d0, dvl_dx3_d1, &
-        dvl_dy1_d0, dvl_dy1_d1, dvl_dy2_d0, dvl_dy2_d1, dvl_dy3_d0, dvl_dy3_d1, &
-        dvl_dz1_d0, dvl_dz1_d1, dvl_dz2_d0, dvl_dz2_d1, dvl_dz3_d0, dvl_dz3_d1, &
-        dvr_dx1_d0, dvr_dx1_d1, dvr_dx2_d0, dvr_dx2_d1, dvr_dx3_d0, dvr_dx3_d1, &
-        dvr_dy1_d0, dvr_dy1_d1, dvr_dy2_d0, dvr_dy2_d1, dvr_dy3_d0, dvr_dy3_d1, &
-        dvr_dz1_d0, dvr_dz1_d1, dvr_dz2_d0, dvr_dz2_d1, dvr_dz3_d0, dvr_dz3_d1, &
-        fsrc3_d0, fsrc3_d1, fsrc4_d0, fsrc4_d1, fsrc5_d0, fsrc5_d1, &
-        fsrc6_d0, fsrc6_d1, jb, je, kb, ke, lb, le, &
-        re_avg_d0, re_avg_d1, re_avg_d2, vel_src_d0, vel_src_d1, vel_src_d2) &
+    function cudaMemcpy_(dst, src, count, kind) bind(C, name='cudaMemcpy')
+      import :: c_ptr, c_int, c_size_t
+      integer(c_int) :: cudaMemcpy_
+      type(c_ptr), value :: dst, src
+      integer(c_size_t), value :: count
+      integer(c_int), value :: kind
+    end function
+    function vsrc_init(dvl_dx1_d0, dvl_dx1_d1, dvl_dx2_d0, dvl_dx2_d1, dvl_dx3_d0, dvl_dx3_d1, dvl_dy1_d0, dvl_dy1_d1, dvl_dy2_d0, dvl_dy2_d1, dvl_dz1_d0, dvl_dz1_d1, dvl_dz3_d0, dvl_dz3_d1, dvr_dx1_d0, dvr_dx1_d1, dvr_dx2_d0, dvr_dx2_d1, dvr_dx3_d0, dvr_dx3_d1, dvr_dy1_d0, dvr_dy1_d1, dvr_dy2_d0, dvr_dy2_d1, dvr_dz1_d0, dvr_dz1_d1, dvr_dz3_d0, dvr_dz3_d1, fsrc3_d0, fsrc3_d1, fsrc4_d0, fsrc4_d1, fsrc5_d0, fsrc5_d1, fsrc6_d0, fsrc6_d1, re_avg_d0, re_avg_d1, re_avg_d2, vel_src_d0, vel_src_d1, vel_src_d2) &
         & bind(C, name='__dace_init_mfc_dace_vsrc_x')
-      import :: c_ptr, c_int, c_int64_t
+      import :: c_ptr, c_int64_t
       type(c_ptr) :: vsrc_init
       integer(c_int64_t), value :: dvl_dx1_d0, dvl_dx1_d1
       integer(c_int64_t), value :: dvl_dx2_d0, dvl_dx2_d1
       integer(c_int64_t), value :: dvl_dx3_d0, dvl_dx3_d1
       integer(c_int64_t), value :: dvl_dy1_d0, dvl_dy1_d1
       integer(c_int64_t), value :: dvl_dy2_d0, dvl_dy2_d1
-      integer(c_int64_t), value :: dvl_dy3_d0, dvl_dy3_d1
       integer(c_int64_t), value :: dvl_dz1_d0, dvl_dz1_d1
-      integer(c_int64_t), value :: dvl_dz2_d0, dvl_dz2_d1
       integer(c_int64_t), value :: dvl_dz3_d0, dvl_dz3_d1
       integer(c_int64_t), value :: dvr_dx1_d0, dvr_dx1_d1
       integer(c_int64_t), value :: dvr_dx2_d0, dvr_dx2_d1
       integer(c_int64_t), value :: dvr_dx3_d0, dvr_dx3_d1
       integer(c_int64_t), value :: dvr_dy1_d0, dvr_dy1_d1
       integer(c_int64_t), value :: dvr_dy2_d0, dvr_dy2_d1
-      integer(c_int64_t), value :: dvr_dy3_d0, dvr_dy3_d1
       integer(c_int64_t), value :: dvr_dz1_d0, dvr_dz1_d1
-      integer(c_int64_t), value :: dvr_dz2_d0, dvr_dz2_d1
       integer(c_int64_t), value :: dvr_dz3_d0, dvr_dz3_d1
       integer(c_int64_t), value :: fsrc3_d0, fsrc3_d1
       integer(c_int64_t), value :: fsrc4_d0, fsrc4_d1
       integer(c_int64_t), value :: fsrc5_d0, fsrc5_d1
       integer(c_int64_t), value :: fsrc6_d0, fsrc6_d1
-      integer(c_int), value :: jb, je, kb, ke, lb, le
       integer(c_int64_t), value :: re_avg_d0, re_avg_d1, re_avg_d2
       integer(c_int64_t), value :: vel_src_d0, vel_src_d1, vel_src_d2
     end function
+
     function vsrc_exit(state) bind(C, name='__dace_exit_mfc_dace_vsrc_x')
       import :: c_ptr, c_int
       integer(c_int) :: vsrc_exit
       type(c_ptr), value :: state
     end function
-    subroutine vsrc_run(state, &
-        dvl_dx1, dvl_dx2, dvl_dx3, dvl_dy1, dvl_dy2, dvl_dy3, &
-        dvl_dz1, dvl_dz2, dvl_dz3, dvr_dx1, dvr_dx2, dvr_dx3, &
-        dvr_dy1, dvr_dy2, dvr_dy3, dvr_dz1, dvr_dz2, dvr_dz3, &
-        fsrc3, fsrc4, fsrc5, fsrc6, re_avg, vel_src, &
-        dvl_dx1_d0, dvl_dx1_d1, dvl_dx2_d0, dvl_dx2_d1, dvl_dx3_d0, dvl_dx3_d1, &
-        dvl_dy1_d0, dvl_dy1_d1, dvl_dy2_d0, dvl_dy2_d1, dvl_dy3_d0, dvl_dy3_d1, &
-        dvl_dz1_d0, dvl_dz1_d1, dvl_dz2_d0, dvl_dz2_d1, dvl_dz3_d0, dvl_dz3_d1, &
-        dvr_dx1_d0, dvr_dx1_d1, dvr_dx2_d0, dvr_dx2_d1, dvr_dx3_d0, dvr_dx3_d1, &
-        dvr_dy1_d0, dvr_dy1_d1, dvr_dy2_d0, dvr_dy2_d1, dvr_dy3_d0, dvr_dy3_d1, &
-        dvr_dz1_d0, dvr_dz1_d1, dvr_dz2_d0, dvr_dz2_d1, dvr_dz3_d0, dvr_dz3_d1, &
-        fsrc3_d0, fsrc3_d1, fsrc4_d0, fsrc4_d1, fsrc5_d0, fsrc5_d1, &
-        fsrc6_d0, fsrc6_d1, jb, je, kb, ke, lb, le, &
-        re_avg_d0, re_avg_d1, re_avg_d2, vel_src_d0, vel_src_d1, vel_src_d2) &
+    subroutine vsrc_run(state, dvl_dx1, dvl_dx2, dvl_dx3, dvl_dy1, dvl_dy2, dvl_dy3, &
+          & dvl_dz1, dvl_dz2, dvl_dz3, dvr_dx1, dvr_dx2, dvr_dx3, &
+          & dvr_dy1, dvr_dy2, dvr_dy3, dvr_dz1, dvr_dz2, dvr_dz3, &
+          & fsrc3, fsrc4, fsrc5, fsrc6, re_avg, vel_src, &
+          & dvl_dx1_d0, dvl_dx1_d1, dvl_dx2_d0, dvl_dx2_d1, dvl_dx3_d0, dvl_dx3_d1, dvl_dy1_d0, dvl_dy1_d1, dvl_dy2_d0, dvl_dy2_d1, dvl_dz1_d0, dvl_dz1_d1, dvl_dz3_d0, dvl_dz3_d1, &
+          & dvr_dx1_d0, dvr_dx1_d1, dvr_dx2_d0, dvr_dx2_d1, dvr_dx3_d0, dvr_dx3_d1, dvr_dy1_d0, dvr_dy1_d1, dvr_dy2_d0, dvr_dy2_d1, dvr_dz1_d0, dvr_dz1_d1, dvr_dz3_d0, dvr_dz3_d1, &
+          & fsrc3_d0, fsrc3_d1, fsrc4_d0, fsrc4_d1, fsrc5_d0, fsrc5_d1, fsrc6_d0, fsrc6_d1, &
+          & jb, je, kb, ke, lb, le, re_avg_d0, re_avg_d1, re_avg_d2, vel_src_d0, vel_src_d1, vel_src_d2) &
         & bind(C, name='__program_mfc_dace_vsrc_x')
       import :: c_ptr, c_int, c_int64_t
       type(c_ptr), value :: state
-      type(c_ptr), value :: dvl_dx1, dvl_dx2, dvl_dx3
-      type(c_ptr), value :: dvl_dy1, dvl_dy2, dvl_dy3
-      type(c_ptr), value :: dvl_dz1, dvl_dz2, dvl_dz3
-      type(c_ptr), value :: dvr_dx1, dvr_dx2, dvr_dx3
-      type(c_ptr), value :: dvr_dy1, dvr_dy2, dvr_dy3
-      type(c_ptr), value :: dvr_dz1, dvr_dz2, dvr_dz3
-      type(c_ptr), value :: fsrc3, fsrc4, fsrc5, fsrc6
-      type(c_ptr), value :: re_avg, vel_src
+      type(c_ptr), value :: dvl_dx1, dvl_dx2, dvl_dx3, dvl_dy1, dvl_dy2, dvl_dy3
+      type(c_ptr), value :: dvl_dz1, dvl_dz2, dvl_dz3, dvr_dx1, dvr_dx2, dvr_dx3
+      type(c_ptr), value :: dvr_dy1, dvr_dy2, dvr_dy3, dvr_dz1, dvr_dz2, dvr_dz3
+      type(c_ptr), value :: fsrc3, fsrc4, fsrc5, fsrc6, re_avg, vel_src
       integer(c_int64_t), value :: dvl_dx1_d0, dvl_dx1_d1
       integer(c_int64_t), value :: dvl_dx2_d0, dvl_dx2_d1
       integer(c_int64_t), value :: dvl_dx3_d0, dvl_dx3_d1
       integer(c_int64_t), value :: dvl_dy1_d0, dvl_dy1_d1
       integer(c_int64_t), value :: dvl_dy2_d0, dvl_dy2_d1
-      integer(c_int64_t), value :: dvl_dy3_d0, dvl_dy3_d1
       integer(c_int64_t), value :: dvl_dz1_d0, dvl_dz1_d1
-      integer(c_int64_t), value :: dvl_dz2_d0, dvl_dz2_d1
       integer(c_int64_t), value :: dvl_dz3_d0, dvl_dz3_d1
       integer(c_int64_t), value :: dvr_dx1_d0, dvr_dx1_d1
       integer(c_int64_t), value :: dvr_dx2_d0, dvr_dx2_d1
       integer(c_int64_t), value :: dvr_dx3_d0, dvr_dx3_d1
       integer(c_int64_t), value :: dvr_dy1_d0, dvr_dy1_d1
       integer(c_int64_t), value :: dvr_dy2_d0, dvr_dy2_d1
-      integer(c_int64_t), value :: dvr_dy3_d0, dvr_dy3_d1
       integer(c_int64_t), value :: dvr_dz1_d0, dvr_dz1_d1
-      integer(c_int64_t), value :: dvr_dz2_d0, dvr_dz2_d1
       integer(c_int64_t), value :: dvr_dz3_d0, dvr_dz3_d1
       integer(c_int64_t), value :: fsrc3_d0, fsrc3_d1
       integer(c_int64_t), value :: fsrc4_d0, fsrc4_d1
@@ -121,7 +101,11 @@ module m_dace_kernels_vsrc
       integer(c_int64_t), value :: re_avg_d0, re_avg_d1, re_avg_d2
       integer(c_int64_t), value :: vel_src_d0, vel_src_d1, vel_src_d2
     end subroutine
+
   end interface
+
+  integer(c_int), parameter :: cpH2D = 1_c_int
+  integer(c_int), parameter :: cpD2H = 2_c_int
 
 #ifndef MFC_DACE_BAKED_BUFF
 #define MFC_DACE_BAKED_BUFF 4
@@ -260,23 +244,47 @@ contains
         ierr = vsrc_exit(state_vsrc)
         state_vsrc = c_null_ptr
       end if
-      state_vsrc = vsrc_init( &
-        & int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), &
-        & int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), &
-        & int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), &
-        & int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), &
-        & int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), &
-        & int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), &
-        & int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), &
-        & int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), &
-        & int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), &
-        & int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), &
-        & int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), int(ext, c_int64_t), &
-        & int(jb_in, c_int), int(je_in, c_int), int(kb_in, c_int), &
-        & int(ke_in, c_int), int(lb_in, c_int), int(le_in, c_int), &
-        & int(size(re_avg,1), c_int64_t), int(size(re_avg,2), c_int64_t), &
+      state_vsrc = vsrc_init(int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(size(re_avg,1), c_int64_t), &
+        & int(size(re_avg,2), c_int64_t), &
         & int(size(re_avg,3), c_int64_t), &
-        & int(size(vel_src,1), c_int64_t), int(size(vel_src,2), c_int64_t), &
+        & int(size(vel_src,1), c_int64_t), &
+        & int(size(vel_src,2), c_int64_t), &
         & int(size(vel_src,3), c_int64_t))
       state_b = b
       state_ext = ext
@@ -284,8 +292,8 @@ contains
 
     ! the fdiff producer (the acc/dace) writes the dvels; the sync = before the read
     ierr = cudaDeviceSynchronize_()
-    call vsrc_run(state_vsrc, &
-          & dp(1), &
+
+    call vsrc_run(state_vsrc, dp(1), &
           & dp(2), &
           & dp(3), &
           & dp(4), &
@@ -309,14 +317,6 @@ contains
           & fp(4), &
           & ra_dev, &
           & vs_dev, &
-          & int(ext, c_int64_t), &
-          & int(ext, c_int64_t), &
-          & int(ext, c_int64_t), &
-          & int(ext, c_int64_t), &
-          & int(ext, c_int64_t), &
-          & int(ext, c_int64_t), &
-          & int(ext, c_int64_t), &
-          & int(ext, c_int64_t), &
           & int(ext, c_int64_t), &
           & int(ext, c_int64_t), &
           & int(ext, c_int64_t), &

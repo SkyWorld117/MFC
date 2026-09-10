@@ -1062,6 +1062,7 @@ contains
           & e64, e64)
     ! (lib stream-syncs internally; no unpack — the kernel wrote the
     ! device prim fields directly)
+
   end subroutine s_dace_convert
 
 end module m_dace_kernels_conv
