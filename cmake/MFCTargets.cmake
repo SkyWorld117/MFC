@@ -117,7 +117,7 @@ exit 0
         if (MFC_DACE)
             target_compile_definitions(${a_target} PRIVATE MFC_DACE
                 MFC_DACE_BAKED_BUFF=${MFC_DACE_BAKED_BUFF})
-            foreach(_dace_off HLLC RK CONV FDIFF WENO)
+            foreach(_dace_off HLLC RK CONV FDIFF WENO VSRC)
                 option(MFC_DACE_${_dace_off}_OFF "Disable the DaCe ${_dace_off} dispatch (bisect)" OFF)
                 if (MFC_DACE_${_dace_off}_OFF)
                     target_compile_definitions(${a_target} PRIVATE MFC_DACE_${_dace_off}_OFF)

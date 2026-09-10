@@ -30,6 +30,7 @@ set(MFC_DACE_LIBS
     "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_sweeps_y.so"
     "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_sweeps_z.so"
     "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_weno_x.so"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_vsrc_x.so"
     "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_weno_y.so"
     "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_weno_z.so"
     "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_pack.so"
