@@ -177,55 +177,52 @@ contains
 
     ! the bases = the element (raw jb) of each array: the kernel's [j0] = the raw jb+j0.
     ! The dvel/fsrc = (idwbuff%beg:) = the raw - (-1-buff); the re/vel = (-1:) = the raw+1.
-    ! the raw jb = -1 (the dir 1): the dvel/fsrc = (idwbuff%beg:) 44^3 arrays whose
-    ! subscripts ARE the raws, so the base = the raw-jb element = subscript jb_in
-    ! (the old lbound+BAKED_BUFF_SIZE pointed at raw 0: one cell off -> the raw-jb
-    ! ghost column of flux_src stayed unwritten and the OpenACC viscous rhs
-    ! consumed NaN from it); the re/vel base = the lbound.
-    dp(1) = acc_deviceptr_(c_loc(dvL_dx1(jb_in, &
-        & jb_in, jb_in)))
-    dp(2) = acc_deviceptr_(c_loc(dvL_dx2(jb_in, &
-        & jb_in, jb_in)))
-    dp(3) = acc_deviceptr_(c_loc(dvL_dx3(jb_in, &
-        & jb_in, jb_in)))
-    dp(4) = acc_deviceptr_(c_loc(dvL_dy1(jb_in, &
-        & jb_in, jb_in)))
-    dp(5) = acc_deviceptr_(c_loc(dvL_dy2(jb_in, &
-        & jb_in, jb_in)))
-    dp(6) = acc_deviceptr_(c_loc(dvL_dy3(jb_in, &
-        & jb_in, jb_in)))
-    dp(7) = acc_deviceptr_(c_loc(dvL_dz1(jb_in, &
-        & jb_in, jb_in)))
-    dp(8) = acc_deviceptr_(c_loc(dvL_dz2(jb_in, &
-        & jb_in, jb_in)))
-    dp(9) = acc_deviceptr_(c_loc(dvL_dz3(jb_in, &
-        & jb_in, jb_in)))
-    dp(10) = acc_deviceptr_(c_loc(dvR_dx1(jb_in, &
-        & jb_in, jb_in)))
-    dp(11) = acc_deviceptr_(c_loc(dvR_dx2(jb_in, &
-        & jb_in, jb_in)))
-    dp(12) = acc_deviceptr_(c_loc(dvR_dx3(jb_in, &
-        & jb_in, jb_in)))
-    dp(13) = acc_deviceptr_(c_loc(dvR_dy1(jb_in, &
-        & jb_in, jb_in)))
-    dp(14) = acc_deviceptr_(c_loc(dvR_dy2(jb_in, &
-        & jb_in, jb_in)))
-    dp(15) = acc_deviceptr_(c_loc(dvR_dy3(jb_in, &
-        & jb_in, jb_in)))
-    dp(16) = acc_deviceptr_(c_loc(dvR_dz1(jb_in, &
-        & jb_in, jb_in)))
-    dp(17) = acc_deviceptr_(c_loc(dvR_dz2(jb_in, &
-        & jb_in, jb_in)))
-    dp(18) = acc_deviceptr_(c_loc(dvR_dz3(jb_in, &
-        & jb_in, jb_in)))
-    fp(1) = acc_deviceptr_(c_loc(fsrc3(jb_in, &
-        & jb_in, jb_in)))
-    fp(2) = acc_deviceptr_(c_loc(fsrc4(jb_in, &
-        & jb_in, jb_in)))
-    fp(3) = acc_deviceptr_(c_loc(fsrc5(jb_in, &
-        & jb_in, jb_in)))
-    fp(4) = acc_deviceptr_(c_loc(fsrc6(jb_in, &
-        & jb_in, jb_in)))
+    ! buff = BAKED_BUFF_SIZE; the raw jb = -1 (the dir 1) → the dvel/fsrc base = the
+    ! lbound + buff; the re/vel base = the lbound.
+    dp(1) = acc_deviceptr_(c_loc(dvL_dx1(lbound(dvL_dx1,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvL_dx1,2)+BAKED_BUFF_SIZE, lbound(dvL_dx1,3)+BAKED_BUFF_SIZE)))
+    dp(2) = acc_deviceptr_(c_loc(dvL_dx2(lbound(dvL_dx2,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvL_dx2,2)+BAKED_BUFF_SIZE, lbound(dvL_dx2,3)+BAKED_BUFF_SIZE)))
+    dp(3) = acc_deviceptr_(c_loc(dvL_dx3(lbound(dvL_dx3,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvL_dx3,2)+BAKED_BUFF_SIZE, lbound(dvL_dx3,3)+BAKED_BUFF_SIZE)))
+    dp(4) = acc_deviceptr_(c_loc(dvL_dy1(lbound(dvL_dy1,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvL_dy1,2)+BAKED_BUFF_SIZE, lbound(dvL_dy1,3)+BAKED_BUFF_SIZE)))
+    dp(5) = acc_deviceptr_(c_loc(dvL_dy2(lbound(dvL_dy2,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvL_dy2,2)+BAKED_BUFF_SIZE, lbound(dvL_dy2,3)+BAKED_BUFF_SIZE)))
+    dp(6) = acc_deviceptr_(c_loc(dvL_dy3(lbound(dvL_dy3,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvL_dy3,2)+BAKED_BUFF_SIZE, lbound(dvL_dy3,3)+BAKED_BUFF_SIZE)))
+    dp(7) = acc_deviceptr_(c_loc(dvL_dz1(lbound(dvL_dz1,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvL_dz1,2)+BAKED_BUFF_SIZE, lbound(dvL_dz1,3)+BAKED_BUFF_SIZE)))
+    dp(8) = acc_deviceptr_(c_loc(dvL_dz2(lbound(dvL_dz2,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvL_dz2,2)+BAKED_BUFF_SIZE, lbound(dvL_dz2,3)+BAKED_BUFF_SIZE)))
+    dp(9) = acc_deviceptr_(c_loc(dvL_dz3(lbound(dvL_dz3,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvL_dz3,2)+BAKED_BUFF_SIZE, lbound(dvL_dz3,3)+BAKED_BUFF_SIZE)))
+    dp(10) = acc_deviceptr_(c_loc(dvR_dx1(lbound(dvR_dx1,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvR_dx1,2)+BAKED_BUFF_SIZE, lbound(dvR_dx1,3)+BAKED_BUFF_SIZE)))
+    dp(11) = acc_deviceptr_(c_loc(dvR_dx2(lbound(dvR_dx2,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvR_dx2,2)+BAKED_BUFF_SIZE, lbound(dvR_dx2,3)+BAKED_BUFF_SIZE)))
+    dp(12) = acc_deviceptr_(c_loc(dvR_dx3(lbound(dvR_dx3,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvR_dx3,2)+BAKED_BUFF_SIZE, lbound(dvR_dx3,3)+BAKED_BUFF_SIZE)))
+    dp(13) = acc_deviceptr_(c_loc(dvR_dy1(lbound(dvR_dy1,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvR_dy1,2)+BAKED_BUFF_SIZE, lbound(dvR_dy1,3)+BAKED_BUFF_SIZE)))
+    dp(14) = acc_deviceptr_(c_loc(dvR_dy2(lbound(dvR_dy2,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvR_dy2,2)+BAKED_BUFF_SIZE, lbound(dvR_dy2,3)+BAKED_BUFF_SIZE)))
+    dp(15) = acc_deviceptr_(c_loc(dvR_dy3(lbound(dvR_dy3,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvR_dy3,2)+BAKED_BUFF_SIZE, lbound(dvR_dy3,3)+BAKED_BUFF_SIZE)))
+    dp(16) = acc_deviceptr_(c_loc(dvR_dz1(lbound(dvR_dz1,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvR_dz1,2)+BAKED_BUFF_SIZE, lbound(dvR_dz1,3)+BAKED_BUFF_SIZE)))
+    dp(17) = acc_deviceptr_(c_loc(dvR_dz2(lbound(dvR_dz2,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvR_dz2,2)+BAKED_BUFF_SIZE, lbound(dvR_dz2,3)+BAKED_BUFF_SIZE)))
+    dp(18) = acc_deviceptr_(c_loc(dvR_dz3(lbound(dvR_dz3,1)+BAKED_BUFF_SIZE, &
+        & lbound(dvR_dz3,2)+BAKED_BUFF_SIZE, lbound(dvR_dz3,3)+BAKED_BUFF_SIZE)))
+    fp(1) = acc_deviceptr_(c_loc(fsrc3(lbound(fsrc3,1)+BAKED_BUFF_SIZE, &
+        & lbound(fsrc3,2)+BAKED_BUFF_SIZE, lbound(fsrc3,3)+BAKED_BUFF_SIZE)))
+    fp(2) = acc_deviceptr_(c_loc(fsrc4(lbound(fsrc4,1)+BAKED_BUFF_SIZE, &
+        & lbound(fsrc4,2)+BAKED_BUFF_SIZE, lbound(fsrc4,3)+BAKED_BUFF_SIZE)))
+    fp(3) = acc_deviceptr_(c_loc(fsrc5(lbound(fsrc5,1)+BAKED_BUFF_SIZE, &
+        & lbound(fsrc5,2)+BAKED_BUFF_SIZE, lbound(fsrc5,3)+BAKED_BUFF_SIZE)))
+    fp(4) = acc_deviceptr_(c_loc(fsrc6(lbound(fsrc6,1)+BAKED_BUFF_SIZE, &
+        & lbound(fsrc6,2)+BAKED_BUFF_SIZE, lbound(fsrc6,3)+BAKED_BUFF_SIZE)))
     ra_dev = acc_deviceptr_(c_loc(re_avg(lbound(re_avg,1), &
         & lbound(re_avg,2), lbound(re_avg,3), 1)))
     vs_dev = acc_deviceptr_(c_loc(vel_src(lbound(vel_src,1), &
