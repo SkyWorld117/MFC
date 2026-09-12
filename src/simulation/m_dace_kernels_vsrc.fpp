@@ -223,10 +223,19 @@ contains
         & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
     fp(4) = acc_deviceptr_(c_loc(fsrc6(jb_in - idwbuff(1)%beg + 1, &
         & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
-    ra_dev = acc_deviceptr_(c_loc(re_avg(lbound(re_avg,1), &
-        & lbound(re_avg,2), lbound(re_avg,3), 1)))
-    vs_dev = acc_deviceptr_(c_loc(vel_src(lbound(vel_src,1), &
-        & lbound(vel_src,2), lbound(vel_src,3), 1)))
+    ! The TU's re/vel subscripts are the rebased (j0,k0,l0) = raws
+    ! (jb+j0, kb+k0, lb+l0), so the base must be the (jb,kb,lb) element -
+    ! NOT the lbound corner (the rsx (-1,-1,-1)): with the lbound base the
+    ! kernel reads re at (x, y-1, z-1), hits the never-written ghost-face
+    ! cells, and tau = f(0) = NaN poisons the whole viscous source.
+    ! re_avg/vel_src are declare-created: acc_deviceptr maps the HOST
+    ! address of any element.  For dir 1 jb=-1 = lbound(1), so element
+    ! addressing (jb,kb,lb) = (lbound+0, +1, +1) - compute via the
+    ! component pointer with explicit subscripts.
+    ! The re/vel dummies are (0:,0:,0:,1:) so the dummy subscript = raw+1;
+    ! the raw (jb,kb,lb) cell = dummy (jb+1, kb+1, lb+1).
+    ra_dev = acc_deviceptr_(c_loc(re_avg(jb_in + 1, kb_in + 1, lb_in + 1, 1)))
+    vs_dev = acc_deviceptr_(c_loc(vel_src(jb_in + 1, kb_in + 1, lb_in + 1, 1)))
     do i = 1, 18
       if (.not. c_associated(dp(i))) then
         print *, 'm_dace_kernels_vsrc: dvel field not device-present'
@@ -292,6 +301,7 @@ contains
 
     ! the fdiff producer (the acc/dace) writes the dvels; the sync = before the read
     ierr = cudaDeviceSynchronize_()
+
 
     call vsrc_run(state_vsrc, dp(1), &
           & dp(2), &
