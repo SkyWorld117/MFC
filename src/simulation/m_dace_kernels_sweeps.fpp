@@ -2713,12 +2713,20 @@ contains
     ! loop bounds: the kernel's (j,k,l) = the MFC dims 1/2/3 by
     ! construction; per sweep the raw face range lands on a different
     ! is-slot: x -> (is1,is2,is3), y -> (is2,is1,is3), z -> (is3,is2,is1)
+    ! NOTE: is1 = the x FACE window (-1..31) but is2/is3 = CELL windows
+    ! (0..31) - the y/z sweeps' face loops therefore miss the low ghost
+    ! face plane (re_avg(0,-1,0) = 0 -> the OpenACC viscous source
+    ! divides by it -> NaN).  Widening jd by face_beg-1 did NOT reach
+    ! the kernel (the staging's dim1=0 plane stayed all zero) - the
+    ! next step is to probe the kernel's actual jb/je args for dir 2/3
+    ! and/or rebase the TU's re subscripts per-dir (the WENO y/z
+    ! TU pattern).
     select case (dir_in)
     case (2)
-      jd(1) = is2b; jd(2) = is2e; jd(3) = is1b
+      jd(1) = is2b - 1; jd(2) = is2e; jd(3) = is1b
       jd(4) = is1e; jd(5) = is3b; jd(6) = is3e
     case (3)
-      jd(1) = is3b; jd(2) = is3e; jd(3) = is2b
+      jd(1) = is3b - 1; jd(2) = is3e; jd(3) = is2b
       jd(4) = is2e; jd(5) = is1b; jd(6) = is1e
     case default
       jd(1) = is1b; jd(2) = is1e; jd(3) = is2b
@@ -4089,6 +4097,20 @@ contains
         end do
       end block
       !$acc update device(re_avg_rsx_vf)
+      block
+        integer, save :: re_dmp_cnt = 0
+        real(c_double), allocatable, target :: rdbg(:)
+        re_dmp_cnt = re_dmp_cnt + 1
+        if (re_dmp_cnt <= 2) then
+          allocate (rdbg(size(re_back)))
+          rdbg = re_back
+          open (99, file='/tmp/re_stage_call.bin', form='unformatted', access='stream')
+          write (99) size(re_back), dir_in
+          write (99) rdbg
+          close (99)
+          deallocate (rdbg)
+        end if
+      end block
     end if
 
     block
