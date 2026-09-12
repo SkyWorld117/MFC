@@ -4077,21 +4077,14 @@ contains
           do rr = 0, e1 - 1
             do qq = 0, e1 - 1
               do pp = 0, e1 - 1
-                ! The bridge's map iterates 0..(bound_end - bound_beg) and the
-                ! CUDA writes RE(_loop_it+1, ...): the staging's dim = d holds
-                ! the re at raw (d - 1 + bound_beg) = raw (d - 2) for
-                ! bound_beg = -1, i.e. rsx position (raw+1) = d - 1.  The
-                ! copy-back therefore reads the staging dim = rsx pos + 1.
-                ! Staging = C-order with the map's (it0,it1,it2) = (sweep-face,
-                ! dim2, dim3): dim1 outermost, dim3 fastest; the rsx = F-order.
-                select case (dir_in)
-                case (2)
-                  sf_ = (qq + 1)*e2*e2 + (pp + 1)*e2 + (rr + 1) + e2*e2*e2*(ii - 1)
-                case (3)
-                  sf_ = (rr + 1)*e2*e2 + (qq + 1)*e2 + (pp + 1) + e2*e2*e2*(ii - 1)
-                case default
-                  sf_ = (pp + 1)*e2*e2 + (qq + 1)*e2 + (rr + 1) + e2*e2*e2*(ii - 1)
-                end select
+                ! The CUDA map's iterations are the RAW indices with the map's
+                ! (it0,it1,it2) = (l, k, j) for EVERY direction (it0 = threadIdx.z
+                ! + 32*blockIdx.z + lb etc.), and the re write =
+                ! RE(it0+1, it1+1, it2+1) -> the staging flat =
+                ! (l+1)*e2^2 + (k+1)*e2 + (j+1), i.e. the C-order (z+1, y+1, x+1)
+                ! for all dirs.  The rsx = F-order (x, y, z) at position raw+1:
+                ! rsx(p,q,r) <- staging dim1 = r, dim2 = q, dim3 = p.
+                sf_ = rr*e2*e2 + qq*e2 + pp + e2*e2*e2*(ii - 1)
                 re_avg_rsx_vf(pp - 1, qq - 1, rr - 1, ii) = re_back(sf_ + 1)
               end do
             end do
