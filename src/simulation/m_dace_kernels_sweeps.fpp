@@ -4077,18 +4077,20 @@ contains
           do rr = 0, e1 - 1
             do qq = 0, e1 - 1
               do pp = 0, e1 - 1
-                ! The TU loops run on the RAW bounds (jd) and write
-                ! RE(j+1,k+1,l+1): the staging position = raw+1 per axis =
-                ! the rsx position exactly.  Staging = C-order with the TU's
-                ! (j,k,l) = (sweep-face, dim2, dim3): dim1 outermost, dim3
-                ! fastest; the rsx = F-order.
+                ! The bridge's map iterates 0..(bound_end - bound_beg) and the
+                ! CUDA writes RE(_loop_it+1, ...): the staging's dim = d holds
+                ! the re at raw (d - 1 + bound_beg) = raw (d - 2) for
+                ! bound_beg = -1, i.e. rsx position (raw+1) = d - 1.  The
+                ! copy-back therefore reads the staging dim = rsx pos + 1.
+                ! Staging = C-order with the map's (it0,it1,it2) = (sweep-face,
+                ! dim2, dim3): dim1 outermost, dim3 fastest; the rsx = F-order.
                 select case (dir_in)
                 case (2)
-                  sf_ = qq*e2*e2 + pp*e2 + rr + e2*e2*e2*(ii - 1)
+                  sf_ = (qq + 1)*e2*e2 + (pp + 1)*e2 + (rr + 1) + e2*e2*e2*(ii - 1)
                 case (3)
-                  sf_ = rr*e2*e2 + qq*e2 + pp + e2*e2*e2*(ii - 1)
+                  sf_ = (rr + 1)*e2*e2 + (qq + 1)*e2 + (pp + 1) + e2*e2*e2*(ii - 1)
                 case default
-                  sf_ = pp*e2*e2 + qq*e2 + rr + e2*e2*e2*(ii - 1)
+                  sf_ = (pp + 1)*e2*e2 + (qq + 1)*e2 + (rr + 1) + e2*e2*e2*(ii - 1)
                 end select
                 re_avg_rsx_vf(pp - 1, qq - 1, rr - 1, ii) = re_back(sf_ + 1)
               end do
