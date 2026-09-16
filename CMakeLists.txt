@@ -39,10 +39,11 @@ set(MFC_DACE_LIBS
     CACHE STRING "DaCe production kernel libraries to link")
 
 
-# The DaCe kernel libraries bake the ghost-cell offset into their TUs' subscripts, so a
-# library is valid for exactly one buff_size.  Each bake records the buff it used in
-# <lib>.baked_buff; refuse a build whose MFC_DACE_BAKED_BUFF disagrees, since the Fortran
-# shims pack with the runtime buff_size and a mismatch silently shifts the data.
+# A DaCe kernel library is baked for exactly one buff_size (the ghost-cell offset is either
+# a substituted literal - the sweep TUs, see scripts/mfc_dace_build.py - or assumed by the
+# shim's pack).  Each bake records the buff it used in <lib>.baked_buff; refuse a build whose
+# MFC_DACE_BAKED_BUFF disagrees, since the Fortran shims pack with the runtime buff_size and
+# a mismatch silently shifts the data (measured: a mixed pair displaced a sweep by (-4,-2,-2)).
 foreach (_dace_lib ${MFC_DACE_LIBS})
     string(REPLACE "libmfc_dace_" "mfc_dace_" _dace_marker "${_dace_lib}")
     string(REPLACE ".so" ".baked_buff" _dace_marker "${_dace_marker}")
