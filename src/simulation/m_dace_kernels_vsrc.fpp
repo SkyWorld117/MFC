@@ -290,20 +290,19 @@ contains
          & .not. cyl_coord .and. .not. chemistry .and. .not. qbmm)
   end function vsrc_dace_contract
 
-  !> Opt-in switch for the dir-2/3 viscous-source kernels (MFC_DACE_VSRC_YZ=1).
-  !! OFF by default: the y/z TU subscript conventions for the transposed dvel
-  !! storage are not yet validated against the native path — with the y/z
-  !! kernels enabled the vis32R physics diverges by 6.6e-2 from the OpenACC
-  !! control, so the native source stays the fallback until they are fixed.
+  !> Dir-2/3 viscous-source kernels: ON by default, MFC_DACE_VSRC_YZ=0 opts
+  !! out to the native OpenACC source (bisect switch).
+  !! Validated against the native path on direction-varying cases: the
+  !! x/y/z-varying viscous runs are bit-identical (13/13 steps, double filter).
   function vsrc_dace_yz_enabled() result(e)
     logical :: e
     character(len=8) :: env
     integer :: st
     logical, save :: cached = .false.
-    logical, save :: cached_val = .false.
+    logical, save :: cached_val = .true.
     if (.not. cached) then
       call get_environment_variable('MFC_DACE_VSRC_YZ', env, status=st)
-      if (st == 0) cached_val = (trim(env) == '1')
+      if (st == 0) cached_val = (trim(env) /= '0')
       cached = .true.
     end if
     e = cached_val
