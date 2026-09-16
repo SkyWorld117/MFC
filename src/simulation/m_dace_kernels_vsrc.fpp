@@ -14,7 +14,7 @@ module m_dace_kernels_vsrc
   use m_global_parameters
   implicit none
   private
-  public :: s_dace_vsrc_x, vsrc_dace_contract, vsrc_dace_mode
+  public :: s_dace_vsrc_x, s_dace_vsrc_y, s_dace_vsrc_z, vsrc_dace_contract, vsrc_dace_mode
 
   interface
     function cudaDeviceSynchronize_() bind(C, name='cudaDeviceSynchronize')
@@ -114,6 +114,10 @@ module m_dace_kernels_vsrc
 
   type(c_ptr), save :: state_vsrc = c_null_ptr
   integer, save :: state_b(6) = -1, state_ext = -1
+  type(c_ptr), save :: state_vsrc_y = c_null_ptr
+  integer, save :: state_b_y(6) = -1, state_ext_y = -1
+  type(c_ptr), save :: state_vsrc_z = c_null_ptr
+  integer, save :: state_b_z(6) = -1, state_ext_z = -1
 
 contains
 
@@ -379,6 +383,469 @@ contains
     ierr = cudaDeviceSynchronize_()
   end subroutine s_dace_vsrc_x
 
+
+  subroutine s_dace_vsrc_y(dvL_dx1, dvL_dx2, dvL_dx3, dvL_dy1, dvL_dy2, dvL_dy3, &
+                           & dvL_dz1, dvL_dz2, dvL_dz3, dvR_dx1, dvR_dx2, dvR_dx3, &
+                           & dvR_dy1, dvR_dy2, dvR_dy3, dvR_dz1, dvR_dz2, dvR_dz3, &
+                           & fsrc3, fsrc4, fsrc5, fsrc6, re_avg, vel_src, &
+                           & jb_in, je_in, kb_in, ke_in, lb_in, le_in)
+    real(wp), dimension(:, :, :), intent(in), target :: dvL_dx1(1:, 1:, 1:), dvL_dx2(1:, 1:, 1:), dvL_dx3(1:, 1:, 1:)
+    real(wp), dimension(:, :, :), intent(in), target :: dvL_dy1(1:, 1:, 1:), dvL_dy2(1:, 1:, 1:), dvL_dy3(1:, 1:, 1:)
+    real(wp), dimension(:, :, :), intent(in), target :: dvL_dz1(1:, 1:, 1:), dvL_dz2(1:, 1:, 1:), dvL_dz3(1:, 1:, 1:)
+    real(wp), dimension(:, :, :), intent(in), target :: dvR_dx1(1:, 1:, 1:), dvR_dx2(1:, 1:, 1:), dvR_dx3(1:, 1:, 1:)
+    real(wp), dimension(:, :, :), intent(in), target :: dvR_dy1(1:, 1:, 1:), dvR_dy2(1:, 1:, 1:), dvR_dy3(1:, 1:, 1:)
+    real(wp), dimension(:, :, :), intent(in), target :: dvR_dz1(1:, 1:, 1:), dvR_dz2(1:, 1:, 1:), dvR_dz3(1:, 1:, 1:)
+    real(wp), dimension(:, :, :), intent(inout), target :: fsrc3(1:, 1:, 1:), fsrc4(1:, 1:, 1:), fsrc5(1:, 1:, 1:), fsrc6(1:, 1:, 1:)
+    real(wp), dimension(:, :, :, :), intent(in), target :: re_avg(0:, 0:, 0:, 1:), vel_src(0:, 0:, 0:, 1:)
+    integer, intent(in) :: jb_in, je_in, kb_in, ke_in, lb_in, le_in
+
+    integer :: ext, b(6)
+    type(c_ptr) :: dp(18), fp(4), ra_dev, vs_dev
+    integer(c_int) :: ierr
+    integer :: i
+
+    ext = size(dvL_dx1, 1)
+    if (size(dvL_dx1, 2) /= ext .or. size(dvL_dx1, 3) /= ext .or. &
+        & size(fsrc3, 1) /= ext .or. size(fsrc3, 2) /= ext .or. &
+        & size(fsrc3, 3) /= ext) then
+      print *, 'm_dace_kernels_vsrc: non-cubic vsrc extents', ext
+      error stop 1
+    end if
+
+    ! the bases = the element (raw jb) of each array: the kernel's [j0] = the raw jb+j0.
+    ! The dvel/fsrc = (idwbuff%beg:) = the raw - (-1-buff); the re/vel = (-1:) = the raw+1.
+    ! buff = BAKED_BUFF_SIZE; the raw jb = -1 (the dir 1) → the dvel/fsrc base = the
+    ! lbound + buff; the re/vel base = the lbound.
+    dp(1) = acc_deviceptr_(c_loc(dvL_dx1(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(2) = acc_deviceptr_(c_loc(dvL_dx2(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(3) = acc_deviceptr_(c_loc(dvL_dx3(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(4) = acc_deviceptr_(c_loc(dvL_dy1(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(5) = acc_deviceptr_(c_loc(dvL_dy2(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(6) = acc_deviceptr_(c_loc(dvL_dy3(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(7) = acc_deviceptr_(c_loc(dvL_dz1(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(8) = acc_deviceptr_(c_loc(dvL_dz2(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(9) = acc_deviceptr_(c_loc(dvL_dz3(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(10) = acc_deviceptr_(c_loc(dvR_dx1(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(11) = acc_deviceptr_(c_loc(dvR_dx2(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(12) = acc_deviceptr_(c_loc(dvR_dx3(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(13) = acc_deviceptr_(c_loc(dvR_dy1(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(14) = acc_deviceptr_(c_loc(dvR_dy2(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(15) = acc_deviceptr_(c_loc(dvR_dy3(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(16) = acc_deviceptr_(c_loc(dvR_dz1(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(17) = acc_deviceptr_(c_loc(dvR_dz2(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(18) = acc_deviceptr_(c_loc(dvR_dz3(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    fp(1) = acc_deviceptr_(c_loc(fsrc3(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    fp(2) = acc_deviceptr_(c_loc(fsrc4(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    fp(3) = acc_deviceptr_(c_loc(fsrc5(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    fp(4) = acc_deviceptr_(c_loc(fsrc6(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    ! The TU's re/vel subscripts are the rebased (j0,k0,l0) = raws
+    ! (jb+j0, kb+k0, lb+l0), so the base must be the (jb,kb,lb) element -
+    ! NOT the lbound corner (the rsx (-1,-1,-1)): with the lbound base the
+    ! kernel reads re at (x, y-1, z-1), hits the never-written ghost-face
+    ! cells, and tau = f(0) = NaN poisons the whole viscous source.
+    ! re_avg/vel_src are declare-created: acc_deviceptr maps the HOST
+    ! address of any element.  For dir 1 jb=-1 = lbound(1), so element
+    ! addressing (jb,kb,lb) = (lbound+0, +1, +1) - compute via the
+    ! component pointer with explicit subscripts.
+    ! The re/vel dummies are (0:,0:,0:,1:) so the dummy subscript = raw+1;
+    ! the raw (jb,kb,lb) cell = dummy (jb+1, kb+1, lb+1).
+    ra_dev = acc_deviceptr_(c_loc(re_avg(jb_in + 1, kb_in + 1, lb_in + 1, 1)))
+    vs_dev = acc_deviceptr_(c_loc(vel_src(jb_in + 1, kb_in + 1, lb_in + 1, 1)))
+    do i = 1, 18
+      if (.not. c_associated(dp(i))) then
+        print *, 'm_dace_kernels_vsrc: dvel field not device-present'
+        error stop 1
+      end if
+    end do
+    if (.not. c_associated(ra_dev) .or. .not. c_associated(vs_dev)) then
+      print *, 'm_dace_kernels_vsrc: viscous arrays not device-present'
+      error stop 1
+    end if
+
+    b = [jb_in, je_in, kb_in, ke_in, lb_in, le_in]
+    if (.not. c_associated(state_vsrc_y) .or. any(state_b_y /= b) .or. state_ext_y /= ext) then
+      if (c_associated(state_vsrc_y)) then
+        ierr = vsrc_exit(state_vsrc_y)
+        state_vsrc_y = c_null_ptr
+      end if
+      state_vsrc_y = vsrc_init(int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(size(re_avg,1), c_int64_t), &
+        & int(size(re_avg,2), c_int64_t), &
+        & int(size(re_avg,3), c_int64_t), &
+        & int(size(vel_src,1), c_int64_t), &
+        & int(size(vel_src,2), c_int64_t), &
+        & int(size(vel_src,3), c_int64_t))
+      state_b_y = b
+      state_ext_y = ext
+    end if
+
+    ! the fdiff producer (the acc/dace) writes the dvels; the sync = before the read
+    ierr = cudaDeviceSynchronize_()
+
+
+    call vsrc_run(state_vsrc_y, dp(1), &
+          & dp(2), &
+          & dp(3), &
+          & dp(4), &
+          & dp(5), &
+          & dp(6), &
+          & dp(7), &
+          & dp(8), &
+          & dp(9), &
+          & dp(10), &
+          & dp(11), &
+          & dp(12), &
+          & dp(13), &
+          & dp(14), &
+          & dp(15), &
+          & dp(16), &
+          & dp(17), &
+          & dp(18), &
+          & fp(1), &
+          & fp(2), &
+          & fp(3), &
+          & fp(4), &
+          & ra_dev, &
+          & vs_dev, &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(jb_in, c_int), &
+          & int(je_in, c_int), &
+          & int(kb_in, c_int), &
+          & int(ke_in, c_int), &
+          & int(lb_in, c_int), &
+          & int(le_in, c_int), &
+          & int(size(re_avg,1), c_int64_t), &
+          & int(size(re_avg,2), c_int64_t), &
+          & int(size(re_avg,3), c_int64_t), &
+          & int(size(vel_src,1), c_int64_t), &
+          & int(size(vel_src,2), c_int64_t), &
+          & int(size(vel_src,3), c_int64_t))
+    ! the exit sync: the RHS consumers = the acc kernels on the acc stream
+    ierr = cudaDeviceSynchronize_()
+  end subroutine s_dace_vsrc_y
+  subroutine s_dace_vsrc_z(dvL_dx1, dvL_dx2, dvL_dx3, dvL_dy1, dvL_dy2, dvL_dy3, &
+                           & dvL_dz1, dvL_dz2, dvL_dz3, dvR_dx1, dvR_dx2, dvR_dx3, &
+                           & dvR_dy1, dvR_dy2, dvR_dy3, dvR_dz1, dvR_dz2, dvR_dz3, &
+                           & fsrc3, fsrc4, fsrc5, fsrc6, re_avg, vel_src, &
+                           & jb_in, je_in, kb_in, ke_in, lb_in, le_in)
+    real(wp), dimension(:, :, :), intent(in), target :: dvL_dx1(1:, 1:, 1:), dvL_dx2(1:, 1:, 1:), dvL_dx3(1:, 1:, 1:)
+    real(wp), dimension(:, :, :), intent(in), target :: dvL_dy1(1:, 1:, 1:), dvL_dy2(1:, 1:, 1:), dvL_dy3(1:, 1:, 1:)
+    real(wp), dimension(:, :, :), intent(in), target :: dvL_dz1(1:, 1:, 1:), dvL_dz2(1:, 1:, 1:), dvL_dz3(1:, 1:, 1:)
+    real(wp), dimension(:, :, :), intent(in), target :: dvR_dx1(1:, 1:, 1:), dvR_dx2(1:, 1:, 1:), dvR_dx3(1:, 1:, 1:)
+    real(wp), dimension(:, :, :), intent(in), target :: dvR_dy1(1:, 1:, 1:), dvR_dy2(1:, 1:, 1:), dvR_dy3(1:, 1:, 1:)
+    real(wp), dimension(:, :, :), intent(in), target :: dvR_dz1(1:, 1:, 1:), dvR_dz2(1:, 1:, 1:), dvR_dz3(1:, 1:, 1:)
+    real(wp), dimension(:, :, :), intent(inout), target :: fsrc3(1:, 1:, 1:), fsrc4(1:, 1:, 1:), fsrc5(1:, 1:, 1:), fsrc6(1:, 1:, 1:)
+    real(wp), dimension(:, :, :, :), intent(in), target :: re_avg(0:, 0:, 0:, 1:), vel_src(0:, 0:, 0:, 1:)
+    integer, intent(in) :: jb_in, je_in, kb_in, ke_in, lb_in, le_in
+
+    integer :: ext, b(6)
+    type(c_ptr) :: dp(18), fp(4), ra_dev, vs_dev
+    integer(c_int) :: ierr
+    integer :: i
+
+    ext = size(dvL_dx1, 1)
+    if (size(dvL_dx1, 2) /= ext .or. size(dvL_dx1, 3) /= ext .or. &
+        & size(fsrc3, 1) /= ext .or. size(fsrc3, 2) /= ext .or. &
+        & size(fsrc3, 3) /= ext) then
+      print *, 'm_dace_kernels_vsrc: non-cubic vsrc extents', ext
+      error stop 1
+    end if
+
+    ! the bases = the element (raw jb) of each array: the kernel's [j0] = the raw jb+j0.
+    ! The dvel/fsrc = (idwbuff%beg:) = the raw - (-1-buff); the re/vel = (-1:) = the raw+1.
+    ! buff = BAKED_BUFF_SIZE; the raw jb = -1 (the dir 1) → the dvel/fsrc base = the
+    ! lbound + buff; the re/vel base = the lbound.
+    dp(1) = acc_deviceptr_(c_loc(dvL_dx1(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(2) = acc_deviceptr_(c_loc(dvL_dx2(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(3) = acc_deviceptr_(c_loc(dvL_dx3(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(4) = acc_deviceptr_(c_loc(dvL_dy1(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(5) = acc_deviceptr_(c_loc(dvL_dy2(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(6) = acc_deviceptr_(c_loc(dvL_dy3(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(7) = acc_deviceptr_(c_loc(dvL_dz1(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(8) = acc_deviceptr_(c_loc(dvL_dz2(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(9) = acc_deviceptr_(c_loc(dvL_dz3(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(10) = acc_deviceptr_(c_loc(dvR_dx1(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(11) = acc_deviceptr_(c_loc(dvR_dx2(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(12) = acc_deviceptr_(c_loc(dvR_dx3(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(13) = acc_deviceptr_(c_loc(dvR_dy1(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(14) = acc_deviceptr_(c_loc(dvR_dy2(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(15) = acc_deviceptr_(c_loc(dvR_dy3(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(16) = acc_deviceptr_(c_loc(dvR_dz1(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(17) = acc_deviceptr_(c_loc(dvR_dz2(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    dp(18) = acc_deviceptr_(c_loc(dvR_dz3(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    fp(1) = acc_deviceptr_(c_loc(fsrc3(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    fp(2) = acc_deviceptr_(c_loc(fsrc4(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    fp(3) = acc_deviceptr_(c_loc(fsrc5(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    fp(4) = acc_deviceptr_(c_loc(fsrc6(jb_in - idwbuff(1)%beg + 1, &
+        & kb_in - idwbuff(2)%beg + 1, lb_in - idwbuff(3)%beg + 1)))
+    ! The TU's re/vel subscripts are the rebased (j0,k0,l0) = raws
+    ! (jb+j0, kb+k0, lb+l0), so the base must be the (jb,kb,lb) element -
+    ! NOT the lbound corner (the rsx (-1,-1,-1)): with the lbound base the
+    ! kernel reads re at (x, y-1, z-1), hits the never-written ghost-face
+    ! cells, and tau = f(0) = NaN poisons the whole viscous source.
+    ! re_avg/vel_src are declare-created: acc_deviceptr maps the HOST
+    ! address of any element.  For dir 1 jb=-1 = lbound(1), so element
+    ! addressing (jb,kb,lb) = (lbound+0, +1, +1) - compute via the
+    ! component pointer with explicit subscripts.
+    ! The re/vel dummies are (0:,0:,0:,1:) so the dummy subscript = raw+1;
+    ! the raw (jb,kb,lb) cell = dummy (jb+1, kb+1, lb+1).
+    ra_dev = acc_deviceptr_(c_loc(re_avg(jb_in + 1, kb_in + 1, lb_in + 1, 1)))
+    vs_dev = acc_deviceptr_(c_loc(vel_src(jb_in + 1, kb_in + 1, lb_in + 1, 1)))
+    do i = 1, 18
+      if (.not. c_associated(dp(i))) then
+        print *, 'm_dace_kernels_vsrc: dvel field not device-present'
+        error stop 1
+      end if
+    end do
+    if (.not. c_associated(ra_dev) .or. .not. c_associated(vs_dev)) then
+      print *, 'm_dace_kernels_vsrc: viscous arrays not device-present'
+      error stop 1
+    end if
+
+    b = [jb_in, je_in, kb_in, ke_in, lb_in, le_in]
+    if (.not. c_associated(state_vsrc_z) .or. any(state_b_z /= b) .or. state_ext_z /= ext) then
+      if (c_associated(state_vsrc_z)) then
+        ierr = vsrc_exit(state_vsrc_z)
+        state_vsrc_z = c_null_ptr
+      end if
+      state_vsrc_z = vsrc_init(int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(ext, c_int64_t), &
+        & int(size(re_avg,1), c_int64_t), &
+        & int(size(re_avg,2), c_int64_t), &
+        & int(size(re_avg,3), c_int64_t), &
+        & int(size(vel_src,1), c_int64_t), &
+        & int(size(vel_src,2), c_int64_t), &
+        & int(size(vel_src,3), c_int64_t))
+      state_b_z = b
+      state_ext_z = ext
+    end if
+
+    ! the fdiff producer (the acc/dace) writes the dvels; the sync = before the read
+    ierr = cudaDeviceSynchronize_()
+
+
+    call vsrc_run(state_vsrc_z, dp(1), &
+          & dp(2), &
+          & dp(3), &
+          & dp(4), &
+          & dp(5), &
+          & dp(6), &
+          & dp(7), &
+          & dp(8), &
+          & dp(9), &
+          & dp(10), &
+          & dp(11), &
+          & dp(12), &
+          & dp(13), &
+          & dp(14), &
+          & dp(15), &
+          & dp(16), &
+          & dp(17), &
+          & dp(18), &
+          & fp(1), &
+          & fp(2), &
+          & fp(3), &
+          & fp(4), &
+          & ra_dev, &
+          & vs_dev, &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(ext, c_int64_t), &
+          & int(jb_in, c_int), &
+          & int(je_in, c_int), &
+          & int(kb_in, c_int), &
+          & int(ke_in, c_int), &
+          & int(lb_in, c_int), &
+          & int(le_in, c_int), &
+          & int(size(re_avg,1), c_int64_t), &
+          & int(size(re_avg,2), c_int64_t), &
+          & int(size(re_avg,3), c_int64_t), &
+          & int(size(vel_src,1), c_int64_t), &
+          & int(size(vel_src,2), c_int64_t), &
+          & int(size(vel_src,3), c_int64_t))
+    ! the exit sync: the RHS consumers = the acc kernels on the acc stream
+    ierr = cudaDeviceSynchronize_()
+  end subroutine s_dace_vsrc_z
 end module m_dace_kernels_vsrc
 #else
 module m_dace_kernels_vsrc
