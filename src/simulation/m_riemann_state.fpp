@@ -274,7 +274,7 @@ contains
         & dvelR_dz_vf, flux_src_vf, q_prim_vf, norm_dir, ix, iy, iz)
 
 #if defined(MFC_DACE)
-        use m_dace_kernels_vsrc, only: s_dace_vsrc_x, s_dace_vsrc_y, s_dace_vsrc_z, vsrc_dace_contract, vsrc_dace_mode
+        use m_dace_kernels_vsrc, only: s_dace_vsrc_x, s_dace_vsrc_y, s_dace_vsrc_z, vsrc_dace_contract, vsrc_dace_mode, vsrc_dace_yz_enabled
 #endif
 
         type(scalar_field), dimension(num_vels), intent(in) :: velL_vf, velR_vf, dvelL_dx_vf, dvelR_dx_vf, dvelL_dy_vf, &
@@ -307,7 +307,7 @@ contains
                                    & flux_src_vf(eqn_idx%mom%beg+2)%sf, flux_src_vf(eqn_idx%E)%sf, &
                                    & Re_avg_rsx_vf, vel_src_rsx_vf, &
                                    & ix%beg, ix%end, iy%beg, iy%end, iz%beg, iz%end)
-            else if (norm_dir == 2 .and. vsrc_dace_mode() == 1 .and. vsrc_dace_contract()) then
+            else if (norm_dir == 2 .and. vsrc_dace_mode() == 1 .and. vsrc_dace_contract() .and. vsrc_dace_yz_enabled()) then
                 call s_dace_vsrc_y(dvelL_dx_vf(1)%sf, dvelL_dx_vf(2)%sf, &
                                    & dvelL_dx_vf(3)%sf, &
                                    & dvelL_dy_vf(1)%sf, dvelL_dy_vf(2)%sf, &
@@ -324,7 +324,7 @@ contains
                                    & flux_src_vf(eqn_idx%mom%beg+2)%sf, flux_src_vf(eqn_idx%E)%sf, &
                                    & Re_avg_rsx_vf, vel_src_rsx_vf, &
                                    & ix%beg, ix%end, iy%beg, iy%end, iz%beg, iz%end)
-            else if (norm_dir == 3 .and. vsrc_dace_mode() == 1 .and. vsrc_dace_contract()) then
+            else if (norm_dir == 3 .and. vsrc_dace_mode() == 1 .and. vsrc_dace_contract() .and. vsrc_dace_yz_enabled()) then
                 call s_dace_vsrc_z(dvelL_dx_vf(1)%sf, dvelL_dx_vf(2)%sf, &
                                    & dvelL_dx_vf(3)%sf, &
                                    & dvelL_dy_vf(1)%sf, dvelL_dy_vf(2)%sf, &
