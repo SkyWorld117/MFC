@@ -4092,25 +4092,18 @@ contains
         end do
       end block
       !$acc update device(re_avg_rsx_vf)
-      block
-        integer, save :: re_dmp_cnt = 0
-        real(c_double), allocatable, target :: rdbg(:)
-        re_dmp_cnt = re_dmp_cnt + 1
-        if (re_dmp_cnt <= 2) then
-          allocate (rdbg(size(re_back)))
-          rdbg = re_back
-          open (99, file='/tmp/re_stage_call.bin', form='unformatted', access='stream')
-          write (99) size(re_back), dir_in
-          write (99) rdbg
-          close (99)
-          deallocate (rdbg)
-        end if
-      end block
     end if
 
+    ! Diagnostic rsx dump, off unless MFC_SWEEPS_DUMP is set (the dump does
+    ! an acc update host of the rsx arrays and writes /tmp/sweepdump_*.bin).
     block
+      character(len=32) :: dump_env
+      integer :: dump_st
       logical :: dmp = .false.
-      call s_dace_hllc_dump('dace', dmp)
+      call get_environment_variable('MFC_SWEEPS_DUMP', dump_env, status=dump_st)
+      if (dump_st == 0) then
+        if (trim(dump_env) == '1') call s_dace_hllc_dump('dace', dmp)
+      end if
     end block
   end subroutine s_dace_hllc_x
 
