@@ -37,6 +37,27 @@ set(MFC_DACE_LIBS
     "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_weno_z.so"
     "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_pack.so"
     CACHE STRING "DaCe production kernel libraries to link")
+
+
+# The DaCe kernel libraries bake the ghost-cell offset into their TUs' subscripts, so a
+# library is valid for exactly one buff_size.  Each bake records the buff it used in
+# <lib>.baked_buff; refuse a build whose MFC_DACE_BAKED_BUFF disagrees, since the Fortran
+# shims pack with the runtime buff_size and a mismatch silently shifts the data.
+foreach (_dace_lib ${MFC_DACE_LIBS})
+    string(REPLACE "libmfc_dace_" "mfc_dace_" _dace_marker "${_dace_lib}")
+    string(REPLACE ".so" ".baked_buff" _dace_marker "${_dace_marker}")
+    if (EXISTS "${_dace_marker}")
+        file(STRINGS "${_dace_marker}" _dace_baked_buff LIMIT_COUNT 1)
+        if (NOT "${_dace_baked_buff}" STREQUAL "${MFC_DACE_BAKED_BUFF}")
+            message(FATAL_ERROR
+                "MFC_DACE: ${_dace_lib} was baked with buff_size=${_dace_baked_buff} "
+                "but MFC_DACE_BAKED_BUFF=${MFC_DACE_BAKED_BUFF}. The kernel TUs hardcode "
+                "the ghost offset, so the shims' runtime pack would be displaced. "
+                "Re-bake the library set for this buff (scripts/mfc_dace_build.py) or set "
+                "MFC_DACE_BAKED_BUFF to ${_dace_baked_buff}.")
+        endif()
+    endif()
+endforeach()
 option(MFC_OpenMP        "Build with OpenMP"                                 OFF)
 option(MFC_GCov          "Build with GCov"                                   OFF)
 option(MFC_Unified       "Build with unified CPU & GPU memory (GH-200 only)" OFF)
