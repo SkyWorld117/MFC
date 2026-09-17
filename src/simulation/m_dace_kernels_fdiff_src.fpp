@@ -810,6 +810,9 @@ contains
     real(wp), dimension(:, :, :), intent(inout), target :: rh8
     real(wp), dimension(:), intent(in), target :: dsp
     integer, intent(in) :: jb_in, je_in, kb_in, ke_in, lb_in, le_in, dir_in
+    character(len=8) :: dbg_env
+    integer :: dbg_st
+    logical, save :: m3_probed = .false.
     !> leading dimension of each bound class: the flux/alpha rows share MFC's idwbuff
     !! bounds, the rhs rows are (0:m, 0:n, 0:p) and the spacing is (-buff:m+buff).
     !! The dummies are sections (see `ptr`), so their own size is not the parent's.
@@ -823,6 +826,21 @@ contains
 
     lbnd = [lbound(f1, 1), lbound(f1, 2), lbound(f1, 3)]
     b = [jb_in, je_in, kb_in, ke_in, lb_in, le_in]
+
+    ! ---- optional ABI probe (MFC_DACE_FDIFF_SRC_PROBE): the bounds, extents and dummy extents the
+    ! kernel is handed for each direction.  These are case-independent, which is what makes them
+    ! worth printing once: a per-direction difference here is invisible in the call text (the
+    ! caller's arguments read the same for all three) but changes what the kernel addresses.
+    call get_environment_variable('MFC_DACE_FDIFF_SRC_PROBE', dbg_env, status=dbg_st)
+    if (dbg_st == 0 .and. len_trim(dbg_env) > 0 .and. trim(dbg_env) /= '0' .and. .not. m3_probed) then
+      m3_probed = .true.
+      print '(A,I2,A,6(I0,1X))', 'M3PROBE dir=', dir_in, ' b=', b
+      print '(A,3(I0,1X))', 'M3PROBE ext_f/ext_r/ext_s=', ext_f, ext_r, ext_s
+      print '(A,6(I0,1X))', 'M3PROBE f1 lb/shape, dsp lb/size =', lbound(f1, 1), lbound(f1, 2), lbound(f1, 3), &
+              size(f1, 1), size(f1, 2), size(f1, 3)
+      print '(A,4(I0,1X))', 'M3PROBE rh1 lb/shape =', lbound(rh1, 1), lbound(rh1, 2), lbound(rh1, 3), size(rh1, 1)
+      print '(A,2(I0,1X))', 'M3PROBE dsp lb/size =', lbound(dsp, 1), size(dsp, 1)
+    end if
 
     f1_dev = acc_deviceptr_(c_loc(f1(lbound(f1, 1), &
                                     & lbound(f1, 2), &
