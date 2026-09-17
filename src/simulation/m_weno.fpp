@@ -15,6 +15,20 @@ module m_weno
     use m_nvtx
 
     private; public :: s_initialize_weno_module, s_finalize_weno_module, s_weno, s_pack_weno_input_arr
+    !> The fused sweep dispatch (M1, MFC_DACE_FUSED) reconstructs both Riemann
+    !! states inside the HLLC kernel, so it reads the primitive buffer and the
+    !! WENO coefficient tables in place.  They live here, and the DaCe WENO
+    !! dispatch receives them as arguments from inside this module -- the fused
+    !! one is called from m_riemann_solver_hllc, so they have to be public.
+    public :: v_rs_weno, poly_coef_cbL_x, poly_coef_cbR_x, d_cbL_x, d_cbR_x, &
+              poly_coef_cbL_y, poly_coef_cbR_y, d_cbL_y, d_cbR_y, &
+              poly_coef_cbL_z, poly_coef_cbR_z, d_cbL_z, d_cbR_z
+
+    !> M1 fused sweep: which directions this step's reconstruction was skipped for
+    !! because the fused HLLC kernel does it (see the dispatch in s_weno).  Read by
+    !! m_riemann_solver_hllc, so both sites act on one verdict.
+    logical, dimension(3) :: dace_fused_weno_active = [.false., .false., .false.]
+    public :: dace_fused_weno_active
 
     !> @name The cell-average variables that will be WENO-reconstructed unpacked into an array for performance
     !> @{
@@ -916,6 +930,7 @@ contains
         use m_dace_kernels_weno, only: s_dace_weno_x, s_dace_weno_y, &
                                        & s_dace_weno_z, weno_dace_contract, &
                                        & weno_dace_mode, weno_dace_dirs
+        use m_dace_kernels_fused, only: dace_fused_contract, dace_fused_dirs
 #endif
         type(scalar_field), dimension(1:), intent(in)                                          :: v_vf
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vL_rs_vf_x
@@ -1098,8 +1113,23 @@ contains
                     #:set SV = STENCIL_VAR
                     #:set SF = lambda offs: COORDS.format(STENCIL_IDX = SV + offs)
                     if (weno_dir == ${WENO_DIR}$) then
+#if defined(MFC_DACE)
+                        !> M1 fused sweep: when the fused kernel will do this direction's
+                        !! reconstruction inside the HLLC solve, the reconstruction here is
+                        !! skipped entirely -- its vL/vR outputs have no consumer on that
+                        !! path.  The decision is published (not re-derived) because
+                        !! m_riemann_solver_hllc must reach the SAME verdict: a WENO that
+                        !! skipped while the fused call did not happen would leave the
+                        !! Riemann states stale.  v_size (this module's private state) and
+                        !! uniform_grid are part of it for that reason.
+                        dace_fused_weno_active(${WENO_DIR}$) = &
+                            & dace_fused_dirs(${WENO_DIR}$) .and. dace_fused_contract() .and. &
+                            & weno_dace_contract() .and. v_size == 8 .and. &
+                            & uniform_grid(${WENO_DIR}$)
+#endif
 #if defined(MFC_DACE) && !defined(MFC_DACE_WENO_OFF)
-                        if (weno_dace_dirs(${WENO_DIR}$) .and. &
+                        if (.not. dace_fused_weno_active(${WENO_DIR}$) .and. &
+                            & weno_dace_dirs(${WENO_DIR}$) .and. &
                             & weno_dace_mode() >= 1 .and. weno_dace_contract() .and. &
                             & v_size == 8 .and. uniform_grid(${WENO_DIR}$)) then
                             #:if WENO_DIR == 1
@@ -1119,7 +1149,8 @@ contains
                                                & is2_weno%end, is1_weno%beg, is1_weno%end)
                             #:endif
                         end if
-                        if (.not. (weno_dace_dirs(${WENO_DIR}$) .and. &
+                        if (.not. dace_fused_weno_active(${WENO_DIR}$) .and. &
+                            & .not. (weno_dace_dirs(${WENO_DIR}$) .and. &
                                    & weno_dace_mode() == 1 .and. weno_dace_contract() .and. &
                                    & v_size == 8 .and. uniform_grid(${WENO_DIR}$))) then
 #else

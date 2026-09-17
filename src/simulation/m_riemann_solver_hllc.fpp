@@ -23,6 +23,16 @@ module m_riemann_solver_hllc
     use m_riemann_state
 #if defined(MFC_DACE)
     use m_dace_kernels_sweeps, only: s_dace_hllc_x, s_dace_hllc_capture
+    use m_dace_kernels_fused, only: s_dace_fused_x
+    !> The fused dispatch reconstructs in place: it reads the primitive buffer and
+    !! the WENO coefficient tables directly, and acts on the verdict m_weno already
+    !! published for this direction (dace_fused_weno_active).  Reading that bit --
+    !! rather than re-deriving the decision here -- is what keeps the skipped
+    !! reconstruction and the fused solve in lockstep.
+    use m_weno, only: dace_fused_weno_active, v_rs_weno, &
+                      poly_coef_cbL_x, poly_coef_cbR_x, d_cbL_x, d_cbR_x, &
+                      poly_coef_cbL_y, poly_coef_cbR_y, d_cbL_y, d_cbR_y, &
+                      poly_coef_cbL_z, poly_coef_cbR_z, d_cbL_z, d_cbR_z
 #endif
 
     implicit none
@@ -917,7 +927,22 @@ contains
                         #:endif
                         #:if not HYPO
 #if defined(MFC_DACE) && !defined(MFC_DACE_HLLC_OFF)
-                        if (hllc_dace_contract() .and. hllc_dace_mode() == 1 .and. &
+                        if (dace_fused_weno_active(${NORM_DIR}$)) then
+                            !> M1 fused sweep: one kernel does this direction's
+                            !! reconstruction AND solve, so neither the packed
+                            !! states nor the reconstruction's vL/vR buffers are
+                            !! read here.  The sweep bounds, the flux/vsrc/fsrc
+                            !! staging and the unpack are the sweeps dispatch's.
+                            call s_dace_fused_x(v_rs_weno, poly_coef_cbL_${XYZ}$, poly_coef_cbR_${XYZ}$, &
+                                               & d_cbL_${XYZ}$, d_cbR_${XYZ}$, &
+                                               & flux_rsx_vf, flux_src_rsx_vf, vel_src_rsx_vf, &
+                                               & is1%beg, is1%end, is2%beg, is2%end, is3%beg, is3%end, &
+                                               & size(v_rs_weno, 1), size(v_rs_weno, 2), size(v_rs_weno, 3), &
+                                               & sys_size, eqn_idx%adv%end - eqn_idx%adv%beg + 1, num_vels, &
+                                               & rsz1_loc, rsz2_loc, ${NORM_DIR}$)
+                        end if
+                        if (.not. dace_fused_weno_active(${NORM_DIR}$) .and. &
+                            & hllc_dace_contract() .and. hllc_dace_mode() == 1 .and. &
             & hllc_dace_dirs(${NORM_DIR}$)) then
                             call s_dace_hllc_x(qL_prim_rsx_vf, qR_prim_rsx_vf, &
                                                & flux_rsx_vf, flux_src_rsx_vf, vel_src_rsx_vf, &
@@ -926,7 +951,8 @@ contains
                                                & sys_size, eqn_idx%adv%end - eqn_idx%adv%beg + 1, num_vels, &
                                                & rsz1_loc, rsz2_loc, ${NORM_DIR}$)
                         end if
-                        if (.not. (hllc_dace_contract() .and. hllc_dace_mode() == 1)) then
+                        if (.not. dace_fused_weno_active(${NORM_DIR}$) .and. &
+                            & .not. (hllc_dace_contract() .and. hllc_dace_mode() == 1)) then
 #else
                         if (.true.) then
 #endif
