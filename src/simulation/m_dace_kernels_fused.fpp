@@ -2509,17 +2509,19 @@ contains
 
   !> The fused sweep dispatch (M1): the DaCe HLLC path with both Riemann states
   !! reconstructed inside the kernel, so neither the packed states nor the
-  !! reconstruction's vL/vR buffers exist.  MFC_DACE_FUSED turns it on (unset or
-  !! 0 = off: the WENO dispatch and the sweeps kernel keep running);
+  !! reconstruction's vL/vR buffers exist.  ON by default now that the M1 gates
+  !! pass (bit-identical to the two-kernel path AND to the pure-OpenACC control);
+  !! MFC_DACE_FUSED=0 falls back to the WENO dispatch + sweeps kernel, and
   !! MFC_DACE_FUSED_DIRS is the per-direction mask, same spelling as the sweeps
-  !! dispatch's ("101" = x and z, y off).
+  !! dispatch's ("101" = x and z, y off).  The case contract below still decides
+  !! eligibility, so a case outside it keeps the validated path regardless.
   function dace_fused_dirs(nd) result(c)
     integer, intent(in) :: nd
     logical :: c
     character(len=8) :: env
     integer :: st
     logical, save :: cached = .false.
-    logical, save :: cached_val(3) = [.false., .false., .false.]
+    logical, save :: cached_val(3) = [.true., .true., .true.]
 
     if (.not. cached) then
       call get_environment_variable('MFC_DACE_FUSED', env, status=st)
