@@ -760,16 +760,15 @@ contains
         cached_val(2) = cached_val(2) .and. (len_trim(env) < 2 .or. env(2:2) == '1')
         cached_val(3) = cached_val(3) .and. (len_trim(env) < 3 .or. env(3:3) == '1')
       end if
-      ! ---- z IS DISABLED PENDING A FIX ------------------------------------------------
-      ! x and y are bit-identical to the stock loops on every case tried (vis32R, vis32y,
-      ! vis32z with the matching mask), but z diverges from step 1 on a z-varying case: the
-      ! error is proportional to the local z-flux variation -- zero in the smooth regions,
-      ! largest at the domain boundaries and at the IC discontinuity, ~1e-3 relative on the
-      ! energy, and it affects the flux-difference rows, not just the advection rows.  The TU
-      ! reads the same indices as the stock z loop (natural subscripts, dz on the swept
-      ! counter), so the cause is in the data path, not the emitted arithmetic.  Until it is
-      ! found, the stock loops keep running for z no matter what the mask says: enabling a
-      ! kernel that silently returns wrong physics is worse than not enabling it.
+      ! ---- z IS DISABLED: reproduced 2026-09-17 with trustworthy fixtures -------------
+      ! x-only and y-only are bit-identical on the same run; z-only DIVERGES.  Reproduce with
+      ! scripts/m3z_repro.sh, which builds a *viscous z-varying shock* case by transposing
+      ! vis32R's IC and compares against the stock baseline -- a self-verifying A/B (M3 only
+      ! replaces the stock loops, so equality is required), which is what the original vis32z
+      ! case can no longer provide: its ICs and reference were consumed by earlier runs.
+      ! Cleared: the TU (reference-free z-only-field test), memory errors (compute-sanitizer),
+      ! the ABI (probe: bounds/extents/strides), baked symbols (the bake records none), and the
+      ! flux_src-adv-row contents (copyin+attach did not change the outcome).
       cached_val(3) = .false.
       cached = .true.
     end if
