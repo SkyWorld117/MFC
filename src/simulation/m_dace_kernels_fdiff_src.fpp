@@ -817,12 +817,12 @@ contains
     real(wp), dimension(:, :, :), intent(inout), target :: rh8
     real(wp), dimension(:), intent(in), target :: dsp
     integer, intent(in) :: jb_in, je_in, kb_in, ke_in, lb_in, le_in, dir_in
-    character(len=8) :: dbg_env
+    character(len=8) :: dbg_env, dbg_env2
+    integer :: m3k, m3j, m3_nc
+    logical, save :: m3_dumped = .false.
     integer :: dbg_st
     logical, save :: m3_probed = .false.
     real(c_double), allocatable :: m3_probe_buf(:)
-    integer :: m3p
-    integer(c_int64_t) :: m3_off
     type(c_ptr) :: m3_probe_dst
     integer(c_int) :: m3_probe_ierr
     ! device->host copy kind, and the ABI, for reading the device data directly
@@ -854,92 +854,38 @@ contains
               size(f1, 1), size(f1, 2), size(f1, 3)
       print '(A,4(I0,1X))', 'M3PROBE rh1 lb/shape =', lbound(rh1, 1), lbound(rh1, 2), lbound(rh1, 3), size(rh1, 1)
       print '(A,2(I0,1X))', 'M3PROBE dsp lb/size =', lbound(dsp, 1), size(dsp, 1)
-      ! The kernel's view of the DATA: read a few elements of a flux row and of an rhs row straight
-      ! from the DEVICE pointers the kernel is about to receive.  Reading the device copy with
-      ! cudaMemcpy_ (the idiom the sweeps shim already uses for its staging) avoids the
-      ! `!$acc update host` that broke the earlier attempt on arrays with no runtime mapping.
-      ! Sample the INTERIOR along the swept axis, not the raw base: for a flux row the base is the
-      ! ghost corner (legitimately zero), so the informative elements are (4, 4, k) with the row's
-      ! own strides -- ext_f^2 for the flux rows, ext_r^2 for the rhs rows, both taken from the
-      ! extents already passed in, so this adapts to any buff.
-      allocate (m3_probe_buf(8))
-      m3_probe_buf = 0.0_c_double
-      do m3p = 0, 3
-        m3_off = int(4 + 4*ext_f + (4 + m3p)*ext_f*ext_f, c_int64_t)
-        if (c_associated(f6_dev)) then
-          m3_probe_ierr = cudaMemcpy_(c_loc(m3_probe_buf(m3p + 1)), &
-                                      transfer(transfer(f6_dev, 0_c_int64_t) + 8_c_int64_t*m3_off, c_null_ptr), 8_c_size_t, cpD2H)
-        end if
-      end do
-      do m3p = 0, 3
-        m3_off = int(4 + 4*ext_r + (4 + m3p)*ext_r*ext_r, c_int64_t)
-        if (c_associated(rh1_dev)) then
-          m3_probe_ierr = cudaMemcpy_(c_loc(m3_probe_buf(m3p + 5)), &
-                                      transfer(transfer(rh1_dev, 0_c_int64_t) + 8_c_int64_t*m3_off, c_null_ptr), 8_c_size_t, cpD2H)
-        end if
-      end do
-      print '(A,8ES16.8)', 'M3PROBE f6(4,4,0..3) rh1(4,4,0..3) =', m3_probe_buf
-      deallocate (m3_probe_buf)
+      ! ---- the kernel's INPUT, off the device (MFC_DACE_FDIFF_SRC_DUMP): a flux row and the two
+      ! advection inputs, copied one CONTIGUOUS ROW at a time.  A flat memcpy would be wrong -- the
+      ! dummy spans the section but the parent's stride is ext_f, so a block copy would splice the
+      ! ghost planes into the interior.  The result is a clean (nc,nc,nc) block per array.
+      call get_environment_variable('MFC_DACE_FDIFF_SRC_DUMP', dbg_env2, status=dbg_st)
+      if (dbg_st == 0 .and. len_trim(dbg_env2) > 0 .and. trim(dbg_env2) /= '0' .and. .not. m3_dumped) then
+        m3_dumped = .true.
+        m3_nc = b(2) - b(1) + 1
+        allocate (m3_probe_buf(int(3*m3_nc*m3_nc*m3_nc, c_int64_t)))
+        do m3k = 0, m3_nc - 1
+          do m3j = 0, m3_nc - 1
+            m3_probe_ierr = cudaMemcpy_(c_loc(m3_probe_buf(1 + m3k*m3_nc*m3_nc + m3j*m3_nc)), &
+                                        transfer(transfer(f6_dev, 0_c_int64_t) + &
+                                                 8_c_int64_t*int(m3j*ext_f + m3k*ext_f*ext_f, c_int64_t), c_null_ptr), &
+                                        int(m3_nc*8, c_size_t), cpD2H)
+            m3_probe_ierr = cudaMemcpy_(c_loc(m3_probe_buf(1 + m3_nc**3 + m3k*m3_nc*m3_nc + m3j*m3_nc)), &
+                                        transfer(transfer(fsrc_dev, 0_c_int64_t) + &
+                                                 8_c_int64_t*int(m3j*ext_f + m3k*ext_f*ext_f, c_int64_t), c_null_ptr), &
+                                        int(m3_nc*8, c_size_t), cpD2H)
+            m3_probe_ierr = cudaMemcpy_(c_loc(m3_probe_buf(1 + 2*m3_nc**3 + m3k*m3_nc*m3_nc + m3j*m3_nc)), &
+                                        transfer(transfer(qa1_dev, 0_c_int64_t) + &
+                                                 8_c_int64_t*int(m3j*ext_f + m3k*ext_f*ext_f, c_int64_t), c_null_ptr), &
+                                        int(m3_nc*8, c_size_t), cpD2H)
+          end do
+        end do
+        open (85, file='/tmp/M3DUMP.bin', form='unformatted', access='stream')
+        write (85) m3_nc, ext_f, dir_in, m3_probe_buf
+        close (85)
+        print '(A,3(I0,1X))', 'M3DUMP wrote nc/ext_f/dir =', m3_nc, ext_f, dir_in
+        deallocate (m3_probe_buf)
+      end if
     end if
-
-    f1_dev = acc_deviceptr_(c_loc(f1(lbound(f1, 1), &
-                                    & lbound(f1, 2), &
-                                    & lbound(f1, 3))))
-    f2_dev = acc_deviceptr_(c_loc(f2(lbound(f2, 1), &
-                                    & lbound(f2, 2), &
-                                    & lbound(f2, 3))))
-    f3_dev = acc_deviceptr_(c_loc(f3(lbound(f3, 1), &
-                                    & lbound(f3, 2), &
-                                    & lbound(f3, 3))))
-    f4_dev = acc_deviceptr_(c_loc(f4(lbound(f4, 1), &
-                                    & lbound(f4, 2), &
-                                    & lbound(f4, 3))))
-    f5_dev = acc_deviceptr_(c_loc(f5(lbound(f5, 1), &
-                                    & lbound(f5, 2), &
-                                    & lbound(f5, 3))))
-    f6_dev = acc_deviceptr_(c_loc(f6(lbound(f6, 1), &
-                                    & lbound(f6, 2), &
-                                    & lbound(f6, 3))))
-    f7_dev = acc_deviceptr_(c_loc(f7(lbound(f7, 1), &
-                                    & lbound(f7, 2), &
-                                    & lbound(f7, 3))))
-    f8_dev = acc_deviceptr_(c_loc(f8(lbound(f8, 1), &
-                                    & lbound(f8, 2), &
-                                    & lbound(f8, 3))))
-    fsrc_dev = acc_deviceptr_(c_loc(fsrc(lbound(fsrc, 1), &
-                                    & lbound(fsrc, 2), &
-                                    & lbound(fsrc, 3))))
-    qa1_dev = acc_deviceptr_(c_loc(qa1(lbound(qa1, 1), &
-                                    & lbound(qa1, 2), &
-                                    & lbound(qa1, 3))))
-    qa2_dev = acc_deviceptr_(c_loc(qa2(lbound(qa2, 1), &
-                                    & lbound(qa2, 2), &
-                                    & lbound(qa2, 3))))
-    rh1_dev = acc_deviceptr_(c_loc(rh1(lbound(rh1, 1), &
-                                    & lbound(rh1, 2), &
-                                    & lbound(rh1, 3))))
-    rh2_dev = acc_deviceptr_(c_loc(rh2(lbound(rh2, 1), &
-                                    & lbound(rh2, 2), &
-                                    & lbound(rh2, 3))))
-    rh3_dev = acc_deviceptr_(c_loc(rh3(lbound(rh3, 1), &
-                                    & lbound(rh3, 2), &
-                                    & lbound(rh3, 3))))
-    rh4_dev = acc_deviceptr_(c_loc(rh4(lbound(rh4, 1), &
-                                    & lbound(rh4, 2), &
-                                    & lbound(rh4, 3))))
-    rh5_dev = acc_deviceptr_(c_loc(rh5(lbound(rh5, 1), &
-                                    & lbound(rh5, 2), &
-                                    & lbound(rh5, 3))))
-    rh6_dev = acc_deviceptr_(c_loc(rh6(lbound(rh6, 1), &
-                                    & lbound(rh6, 2), &
-                                    & lbound(rh6, 3))))
-    rh7_dev = acc_deviceptr_(c_loc(rh7(lbound(rh7, 1), &
-                                    & lbound(rh7, 2), &
-                                    & lbound(rh7, 3))))
-    rh8_dev = acc_deviceptr_(c_loc(rh8(lbound(rh8, 1), &
-                                    & lbound(rh8, 2), &
-                                    & lbound(rh8, 3))))
-    dsp_dev = acc_deviceptr_(c_loc(dsp(lbound(dsp, 1))))
     if (.not. c_associated(f1_dev) .or. .not. c_associated(f2_dev) .or. &
         & .not. c_associated(f3_dev) .or. .not. c_associated(f4_dev) .or. &
         & .not. c_associated(f5_dev) .or. .not. c_associated(f6_dev) .or. &
@@ -1065,6 +1011,7 @@ contains
       print *, 'm_dace_kernels_fdiff_src: bad direction', dir_in
       error stop 1
     end select
+
   end subroutine s_dace_fdiff_src
 
 end module m_dace_kernels_fdiff_src
