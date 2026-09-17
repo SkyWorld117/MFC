@@ -10,6 +10,14 @@ module m_dace_kernels_fdiff_src
   public :: s_dace_fdiff_src, fdiff_src_dirs, fdiff_src_contract
 
   interface
+    function cudaMemcpy_(dst, src, count, kind) bind(C, name='cudaMemcpy')
+      import :: c_ptr, c_size_t, c_int
+      integer(c_int) :: cudaMemcpy_
+      type(c_ptr), value :: dst, src
+      integer(c_size_t), value :: count
+      integer(c_int), value :: kind
+    end function
+
     function acc_deviceptr_(hostptr) bind(C, name='acc_deviceptr')
       import :: c_ptr
       type(c_ptr) :: acc_deviceptr_
@@ -813,6 +821,11 @@ contains
     character(len=8) :: dbg_env
     integer :: dbg_st
     logical, save :: m3_probed = .false.
+    real(c_double), allocatable :: m3_probe_buf(:)
+    type(c_ptr) :: m3_probe_dst
+    integer(c_int) :: m3_probe_ierr
+    ! device->host copy kind, and the ABI, for reading the device data directly
+    integer(c_int), parameter :: cpD2H = 2_c_int
     !> leading dimension of each bound class: the flux/alpha rows share MFC's idwbuff
     !! bounds, the rhs rows are (0:m, 0:n, 0:p) and the spacing is (-buff:m+buff).
     !! The dummies are sections (see `ptr`), so their own size is not the parent's.
@@ -840,6 +853,19 @@ contains
               size(f1, 1), size(f1, 2), size(f1, 3)
       print '(A,4(I0,1X))', 'M3PROBE rh1 lb/shape =', lbound(rh1, 1), lbound(rh1, 2), lbound(rh1, 3), size(rh1, 1)
       print '(A,2(I0,1X))', 'M3PROBE dsp lb/size =', lbound(dsp, 1), size(dsp, 1)
+      ! The kernel's view of the DATA: read a few elements of a flux row and of an rhs row straight
+      ! from the DEVICE pointers the kernel is about to receive.  Reading the device copy with
+      ! cudaMemcpy_ (the idiom the sweeps shim already uses for its staging) avoids the
+      ! `!$acc update host` that broke the earlier attempt on arrays with no runtime mapping.
+      allocate (m3_probe_buf(8))
+      if (c_associated(f6_dev)) then
+        m3_probe_ierr = cudaMemcpy_(c_loc(m3_probe_buf), f6_dev, 8_c_size_t*8_c_size_t, cpD2H)
+      end if
+      if (c_associated(rh1_dev)) then
+        m3_probe_ierr = cudaMemcpy_(c_loc(m3_probe_buf(5)), rh1_dev, 4_c_size_t*8_c_size_t, cpD2H)
+      end if
+      print '(A,8ES16.8)', 'M3PROBE f6[0:3], rh1[0:3] =', m3_probe_buf
+      deallocate (m3_probe_buf)
     end if
 
     f1_dev = acc_deviceptr_(c_loc(f1(lbound(f1, 1), &
