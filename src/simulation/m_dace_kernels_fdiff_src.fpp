@@ -822,6 +822,8 @@ contains
     integer :: dbg_st
     logical, save :: m3_probed = .false.
     real(c_double), allocatable :: m3_probe_buf(:)
+    integer :: m3p
+    integer(c_int64_t) :: m3_off
     type(c_ptr) :: m3_probe_dst
     integer(c_int) :: m3_probe_ierr
     ! device->host copy kind, and the ABI, for reading the device data directly
@@ -857,14 +859,27 @@ contains
       ! from the DEVICE pointers the kernel is about to receive.  Reading the device copy with
       ! cudaMemcpy_ (the idiom the sweeps shim already uses for its staging) avoids the
       ! `!$acc update host` that broke the earlier attempt on arrays with no runtime mapping.
+      ! Sample the INTERIOR along the swept axis, not the raw base: for a flux row the base is the
+      ! ghost corner (legitimately zero), so the informative elements are (4, 4, k) with the row's
+      ! own strides -- ext_f^2 for the flux rows, ext_r^2 for the rhs rows, both taken from the
+      ! extents already passed in, so this adapts to any buff.
       allocate (m3_probe_buf(8))
-      if (c_associated(f6_dev)) then
-        m3_probe_ierr = cudaMemcpy_(c_loc(m3_probe_buf), f6_dev, 8_c_size_t*8_c_size_t, cpD2H)
-      end if
-      if (c_associated(rh1_dev)) then
-        m3_probe_ierr = cudaMemcpy_(c_loc(m3_probe_buf(5)), rh1_dev, 4_c_size_t*8_c_size_t, cpD2H)
-      end if
-      print '(A,8ES16.8)', 'M3PROBE f6[0:3], rh1[0:3] =', m3_probe_buf
+      m3_probe_buf = 0.0_c_double
+      do m3p = 0, 3
+        m3_off = int(4 + 4*ext_f + (4 + m3p)*ext_f*ext_f, c_int64_t)
+        if (c_associated(f6_dev)) then
+          m3_probe_ierr = cudaMemcpy_(c_loc(m3_probe_buf(m3p + 1)), &
+                                      transfer(transfer(f6_dev, 0_c_int64_t) + 8_c_int64_t*m3_off, c_null_ptr), 8_c_size_t, cpD2H)
+        end if
+      end do
+      do m3p = 0, 3
+        m3_off = int(4 + 4*ext_r + (4 + m3p)*ext_r*ext_r, c_int64_t)
+        if (c_associated(rh1_dev)) then
+          m3_probe_ierr = cudaMemcpy_(c_loc(m3_probe_buf(m3p + 5)), &
+                                      transfer(transfer(rh1_dev, 0_c_int64_t) + 8_c_int64_t*m3_off, c_null_ptr), 8_c_size_t, cpD2H)
+        end if
+      end do
+      print '(A,8ES16.8)', 'M3PROBE f6(4,4,0..3) rh1(4,4,0..3) =', m3_probe_buf
       deallocate (m3_probe_buf)
     end if
 
