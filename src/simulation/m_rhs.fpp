@@ -222,6 +222,7 @@ contains
                     do l = 1, sys_size
                         @:ALLOCATE(flux_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                    & idwbuff(3)%beg:idwbuff(3)%end))
+                        $:GPU_ENTER_DATA(attach='[flux_n(i)%vf(l)%sf]')
                         @:ALLOCATE(flux_gsrc_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                    & idwbuff(3)%beg:idwbuff(3)%end))
                     end do
@@ -230,6 +231,7 @@ contains
                         do l = eqn_idx%mom%beg, eqn_idx%E
                             @:ALLOCATE(flux_src_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                        & idwbuff(3)%beg:idwbuff(3)%end))
+                            $:GPU_ENTER_DATA(attach='[flux_src_n(i)%vf(l)%sf]')
                         end do
                     end if
 
@@ -246,6 +248,7 @@ contains
                     ! for structural consistency with s_finalize_riemann_solver.
                     @:ALLOCATE(flux_src_n(i)%vf(eqn_idx%adv%beg)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                & idwbuff(3)%beg:idwbuff(3)%end))
+                    $:GPU_ENTER_DATA(attach='[flux_src_n(i)%vf(eqn_idx%adv%beg)%sf]')
 
                     if (adv_src_mode == adv_src_mode_alpha_iface .or. adv_src_mode == adv_src_mode_none) then
                         ! Alpha-interface needs separate per-fluid arrays. HLLD (adv_src_mode_none) allocates for structural
@@ -253,6 +256,7 @@ contains
                         do l = eqn_idx%adv%beg + 1, eqn_idx%adv%end
                             @:ALLOCATE(flux_src_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                        & idwbuff(3)%beg:idwbuff(3)%end))
+                            $:GPU_ENTER_DATA(attach='[flux_src_n(i)%vf(l)%sf]')
                         end do
                     end if
 
@@ -260,6 +264,7 @@ contains
                         do l = eqn_idx%species%beg, eqn_idx%species%end
                             @:ALLOCATE(flux_src_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                        & idwbuff(3)%beg:idwbuff(3)%end))
+                            $:GPU_ENTER_DATA(attach='[flux_src_n(i)%vf(l)%sf]')
                         end do
                         if (chem_params%diffusion .and. .not. viscous) then
                             @:ALLOCATE(flux_src_n(i)%vf(eqn_idx%E)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
@@ -1115,31 +1120,29 @@ contains
                 call s_cbc(q_prim_vf%vf, flux_n(idir)%vf, flux_src_n_vf%vf, idir, 1, irx, iry, irz)
             end if
 
-                ! MFC's OpenACC loops map these per-row fields per loop (copy-in and
-                ! copy-back), so the host copies are current but the arrays are not persistently
-                ! mapped and acc_deviceptr returns null for them.  Enter them here, where the
-                ! concrete arrays are in scope (the macros.fpp pattern), so the DaCe kernel gets
-                ! real device pointers.
-                !$acc enter data copyin(flux_n(1)%vf, flux_src_n(1)%vf)
-    !$acc enter data copyin(flux_n(1)%vf(1)%sf, flux_n(1)%vf(2)%sf, &
-                !$acc & flux_n(1)%vf(3)%sf, flux_n(1)%vf(4)%sf, flux_n(1)%vf(5)%sf, &
-                !$acc & flux_n(1)%vf(6)%sf, flux_n(1)%vf(7)%sf, flux_n(1)%vf(8)%sf, &
-                !$acc & flux_src_n(1)%vf(eqn_idx%adv%beg)%sf)
             if (fdiff_src_dirs(1) .and. fdiff_src_contract()) then
+                ! The rows cross the C ABI as raw device pointers, so they have to be
+                ! attached: MFC's @:ACC_SETUP_VFs (the macro that would do it) sits entirely
+                ! inside #ifdef _CRAYFTN -- nothing on nvfortran -- and by this point a loop
+                ! that mapped a row has dropped its association.  attach only, never copyin:
+                ! the host copies are stale here, and copyin would push them over the device
+                ! copies the HLLC/sweeps kernel just wrote.
+                $:GPU_ENTER_DATA(attach='[flux_n(1)%vf(1)%sf, flux_n(1)%vf(2)%sf, flux_n(1)%vf(3)%sf, flux_n(1)%vf(4)%sf, flux_n(1)%vf(5)%sf, flux_n(1)%vf(6)%sf, flux_n(1)%vf(7)%sf, flux_n(1)%vf(8)%sf, flux_src_n(1)%vf(eqn_idx%adv%beg)%sf]')
                 !> M3: the fused flux difference + alpha advection source in one kernel per
                 !! direction (the cuf_sweeps shape).  The CBC face surgery above has already
                 !! run, so the kernel reads exactly the fluxes the stock loops would.
-                call s_dace_fdiff_src(flux_n(1)%vf(1)%sf, flux_n(1)%vf(2)%sf, &
-                                      & flux_n(1)%vf(3)%sf, flux_n(1)%vf(4)%sf, &
-                                      & flux_n(1)%vf(5)%sf, flux_n(1)%vf(6)%sf, &
-                                      & flux_n(1)%vf(7)%sf, flux_n(1)%vf(8)%sf, &
-                                      & flux_src_n(1)%vf(eqn_idx%adv%beg)%sf, &
-                                      & q_cons_vf%vf(eqn_idx%adv%beg)%sf, &
-                                      & q_cons_vf%vf(eqn_idx%adv%end)%sf, &
-                                      & rhs_vf(1)%sf, rhs_vf(2)%sf, rhs_vf(3)%sf, &
-                                      & rhs_vf(4)%sf, rhs_vf(5)%sf, rhs_vf(6)%sf, &
-                                      & rhs_vf(7)%sf, rhs_vf(8)%sf, &
-                                      & dx, 0, m, 0, n, 0, p, 1)
+                call s_dace_fdiff_src(flux_n(1)%vf(1)%sf(0:, 0:, 0:), flux_n(1)%vf(2)%sf(0:, 0:, 0:), &
+                                      & flux_n(1)%vf(3)%sf(0:, 0:, 0:), flux_n(1)%vf(4)%sf(0:, 0:, 0:), &
+                                      & flux_n(1)%vf(5)%sf(0:, 0:, 0:), flux_n(1)%vf(6)%sf(0:, 0:, 0:), &
+                                      & flux_n(1)%vf(7)%sf(0:, 0:, 0:), flux_n(1)%vf(8)%sf(0:, 0:, 0:), &
+                                      & flux_src_n(1)%vf(eqn_idx%adv%beg)%sf(0:, 0:, 0:), &
+                                      & q_cons_vf%vf(eqn_idx%adv%beg)%sf(0:, 0:, 0:), &
+                                      & q_cons_vf%vf(eqn_idx%adv%end)%sf(0:, 0:, 0:), &
+                                      & rhs_vf(1)%sf(0:, 0:, 0:), rhs_vf(2)%sf(0:, 0:, 0:), rhs_vf(3)%sf(0:, 0:, 0:), &
+                                      & rhs_vf(4)%sf(0:, 0:, 0:), rhs_vf(5)%sf(0:, 0:, 0:), rhs_vf(6)%sf(0:, 0:, 0:), &
+                                      & rhs_vf(7)%sf(0:, 0:, 0:), rhs_vf(8)%sf(0:, 0:, 0:), &
+                                      & dx(0:), 0, m, 0, n, 0, p, 1, &
+                                      & size(flux_n(1)%vf(1)%sf, 1), size(rhs_vf(1)%sf, 1), size(dx, 1))
             else
             if (hypo_nc_mode /= hypo_nc_mode_dual_pass) then
                 $:GPU_PARALLEL_LOOP(collapse=4,private='[j, k_loop, l_loop, q_loop, inv_ds, flux_face1, flux_face2]')
@@ -1218,28 +1221,26 @@ contains
                 call s_cbc(q_prim_vf%vf, flux_n(idir)%vf, flux_src_n_vf%vf, idir, 1, irx, iry, irz)
             end if
 
-                ! MFC's OpenACC loops map these per-row fields per loop (copy-in and
-                ! copy-back), so the host copies are current but the arrays are not persistently
-                ! mapped and acc_deviceptr returns null for them.  Enter them here, where the
-                ! concrete arrays are in scope (the macros.fpp pattern), so the DaCe kernel gets
-                ! real device pointers.
-                !$acc enter data copyin(flux_n(2)%vf, flux_src_n(2)%vf)
-    !$acc enter data copyin(flux_n(2)%vf(1)%sf, flux_n(2)%vf(2)%sf, &
-                !$acc & flux_n(2)%vf(3)%sf, flux_n(2)%vf(4)%sf, flux_n(2)%vf(5)%sf, &
-                !$acc & flux_n(2)%vf(6)%sf, flux_n(2)%vf(7)%sf, flux_n(2)%vf(8)%sf, &
-                !$acc & flux_src_n(2)%vf(eqn_idx%adv%beg)%sf)
             if (fdiff_src_dirs(2) .and. fdiff_src_contract()) then
-                call s_dace_fdiff_src(flux_n(2)%vf(1)%sf, flux_n(2)%vf(2)%sf, &
-                                      & flux_n(2)%vf(3)%sf, flux_n(2)%vf(4)%sf, &
-                                      & flux_n(2)%vf(5)%sf, flux_n(2)%vf(6)%sf, &
-                                      & flux_n(2)%vf(7)%sf, flux_n(2)%vf(8)%sf, &
-                                      & flux_src_n(2)%vf(eqn_idx%adv%beg)%sf, &
-                                      & q_cons_vf%vf(eqn_idx%adv%beg)%sf, &
-                                      & q_cons_vf%vf(eqn_idx%adv%end)%sf, &
-                                      & rhs_vf(1)%sf, rhs_vf(2)%sf, rhs_vf(3)%sf, &
-                                      & rhs_vf(4)%sf, rhs_vf(5)%sf, rhs_vf(6)%sf, &
-                                      & rhs_vf(7)%sf, rhs_vf(8)%sf, &
-                                      & dy, 0, m, 0, n, 0, p, 2)
+                ! The rows cross the C ABI as raw device pointers, so they have to be
+                ! attached: MFC's @:ACC_SETUP_VFs (the macro that would do it) sits entirely
+                ! inside #ifdef _CRAYFTN -- nothing on nvfortran -- and by this point a loop
+                ! that mapped a row has dropped its association.  attach only, never copyin:
+                ! the host copies are stale here, and copyin would push them over the device
+                ! copies the HLLC/sweeps kernel just wrote.
+                $:GPU_ENTER_DATA(attach='[flux_n(2)%vf(1)%sf, flux_n(2)%vf(2)%sf, flux_n(2)%vf(3)%sf, flux_n(2)%vf(4)%sf, flux_n(2)%vf(5)%sf, flux_n(2)%vf(6)%sf, flux_n(2)%vf(7)%sf, flux_n(2)%vf(8)%sf, flux_src_n(2)%vf(eqn_idx%adv%beg)%sf]')
+                call s_dace_fdiff_src(flux_n(2)%vf(1)%sf(0:, 0:, 0:), flux_n(2)%vf(2)%sf(0:, 0:, 0:), &
+                                      & flux_n(2)%vf(3)%sf(0:, 0:, 0:), flux_n(2)%vf(4)%sf(0:, 0:, 0:), &
+                                      & flux_n(2)%vf(5)%sf(0:, 0:, 0:), flux_n(2)%vf(6)%sf(0:, 0:, 0:), &
+                                      & flux_n(2)%vf(7)%sf(0:, 0:, 0:), flux_n(2)%vf(8)%sf(0:, 0:, 0:), &
+                                      & flux_src_n(2)%vf(eqn_idx%adv%beg)%sf(0:, 0:, 0:), &
+                                      & q_cons_vf%vf(eqn_idx%adv%beg)%sf(0:, 0:, 0:), &
+                                      & q_cons_vf%vf(eqn_idx%adv%end)%sf(0:, 0:, 0:), &
+                                      & rhs_vf(1)%sf(0:, 0:, 0:), rhs_vf(2)%sf(0:, 0:, 0:), rhs_vf(3)%sf(0:, 0:, 0:), &
+                                      & rhs_vf(4)%sf(0:, 0:, 0:), rhs_vf(5)%sf(0:, 0:, 0:), rhs_vf(6)%sf(0:, 0:, 0:), &
+                                      & rhs_vf(7)%sf(0:, 0:, 0:), rhs_vf(8)%sf(0:, 0:, 0:), &
+                                      & dy(0:), 0, m, 0, n, 0, p, 2, &
+                                      & size(flux_n(2)%vf(1)%sf, 1), size(rhs_vf(1)%sf, 1), size(dy, 1))
             else
             if (hypo_nc_mode /= hypo_nc_mode_dual_pass) then
                 $:GPU_PARALLEL_LOOP(collapse=4,private='[j, k, l, q, inv_ds, flux_face1, flux_face2]')
@@ -1404,28 +1405,26 @@ contains
                 end do
                 $:END_GPU_PARALLEL_LOOP()
             else  ! Cartesian Coordinates
-                    ! MFC's OpenACC loops map these per-row fields per loop (copy-in and
-                ! copy-back), so the host copies are current but the arrays are not persistently
-                ! mapped and acc_deviceptr returns null for them.  Enter them here, where the
-                ! concrete arrays are in scope (the macros.fpp pattern), so the DaCe kernel gets
-                ! real device pointers.
-                !$acc enter data copyin(flux_n(3)%vf, flux_src_n(3)%vf)
-    !$acc enter data copyin(flux_n(3)%vf(1)%sf, flux_n(3)%vf(2)%sf, &
-                !$acc & flux_n(3)%vf(3)%sf, flux_n(3)%vf(4)%sf, flux_n(3)%vf(5)%sf, &
-                !$acc & flux_n(3)%vf(6)%sf, flux_n(3)%vf(7)%sf, flux_n(3)%vf(8)%sf, &
-                !$acc & flux_src_n(3)%vf(eqn_idx%adv%beg)%sf)
             if (fdiff_src_dirs(3) .and. fdiff_src_contract()) then
-                    call s_dace_fdiff_src(flux_n(3)%vf(1)%sf, flux_n(3)%vf(2)%sf, &
-                                          & flux_n(3)%vf(3)%sf, flux_n(3)%vf(4)%sf, &
-                                          & flux_n(3)%vf(5)%sf, flux_n(3)%vf(6)%sf, &
-                                          & flux_n(3)%vf(7)%sf, flux_n(3)%vf(8)%sf, &
-                                          & flux_src_n(3)%vf(eqn_idx%adv%beg)%sf, &
-                                          & q_cons_vf%vf(eqn_idx%adv%beg)%sf, &
-                                          & q_cons_vf%vf(eqn_idx%adv%end)%sf, &
-                                          & rhs_vf(1)%sf, rhs_vf(2)%sf, rhs_vf(3)%sf, &
-                                          & rhs_vf(4)%sf, rhs_vf(5)%sf, rhs_vf(6)%sf, &
-                                          & rhs_vf(7)%sf, rhs_vf(8)%sf, &
-                                          & dz, 0, m, 0, n, 0, p, 3)
+                ! The rows cross the C ABI as raw device pointers, so they have to be
+                ! attached: MFC's @:ACC_SETUP_VFs (the macro that would do it) sits entirely
+                ! inside #ifdef _CRAYFTN -- nothing on nvfortran -- and by this point a loop
+                ! that mapped a row has dropped its association.  attach only, never copyin:
+                ! the host copies are stale here, and copyin would push them over the device
+                ! copies the HLLC/sweeps kernel just wrote.
+                $:GPU_ENTER_DATA(attach='[flux_n(3)%vf(1)%sf, flux_n(3)%vf(2)%sf, flux_n(3)%vf(3)%sf, flux_n(3)%vf(4)%sf, flux_n(3)%vf(5)%sf, flux_n(3)%vf(6)%sf, flux_n(3)%vf(7)%sf, flux_n(3)%vf(8)%sf, flux_src_n(3)%vf(eqn_idx%adv%beg)%sf]')
+                    call s_dace_fdiff_src(flux_n(3)%vf(1)%sf(0:, 0:, 0:), flux_n(3)%vf(2)%sf(0:, 0:, 0:), &
+                                          & flux_n(3)%vf(3)%sf(0:, 0:, 0:), flux_n(3)%vf(4)%sf(0:, 0:, 0:), &
+                                          & flux_n(3)%vf(5)%sf(0:, 0:, 0:), flux_n(3)%vf(6)%sf(0:, 0:, 0:), &
+                                          & flux_n(3)%vf(7)%sf(0:, 0:, 0:), flux_n(3)%vf(8)%sf(0:, 0:, 0:), &
+                                          & flux_src_n(3)%vf(eqn_idx%adv%beg)%sf(0:, 0:, 0:), &
+                                          & q_cons_vf%vf(eqn_idx%adv%beg)%sf(0:, 0:, 0:), &
+                                          & q_cons_vf%vf(eqn_idx%adv%end)%sf(0:, 0:, 0:), &
+                                          & rhs_vf(1)%sf(0:, 0:, 0:), rhs_vf(2)%sf(0:, 0:, 0:), rhs_vf(3)%sf(0:, 0:, 0:), &
+                                          & rhs_vf(4)%sf(0:, 0:, 0:), rhs_vf(5)%sf(0:, 0:, 0:), rhs_vf(6)%sf(0:, 0:, 0:), &
+                                          & rhs_vf(7)%sf(0:, 0:, 0:), rhs_vf(8)%sf(0:, 0:, 0:), &
+                                          & dz(0:), 0, m, 0, n, 0, p, 3, &
+                                      & size(flux_n(3)%vf(1)%sf, 1), size(rhs_vf(1)%sf, 1), size(dz, 1))
                 else
                 if (hypo_nc_mode /= hypo_nc_mode_dual_pass) then
                     $:GPU_PARALLEL_LOOP(collapse=4,private='[j, k, l, q, inv_ds, flux_face1, flux_face2]')

@@ -775,7 +775,8 @@ contains
   !! as the raw device pointer of the element at the raw (jb, kb, lb) -- the validated vsrc
   !! convention -- so the kernel's index 0 is that cell and the buff never appears here.
   subroutine s_dace_fdiff_src(f1, f2, f3, f4, f5, f6, f7, f8, fsrc, qa1, qa2, rh1, rh2, rh3, rh4, rh5, rh6, rh7, rh8, dsp, &
-                              & jb_in, je_in, kb_in, ke_in, lb_in, le_in, dir_in)
+                              & jb_in, je_in, kb_in, ke_in, lb_in, le_in, dir_in, &
+                              & ext_f, ext_r, ext_s)
     real(wp), dimension(:, :, :), intent(in), target :: f1
     real(wp), dimension(:, :, :), intent(in), target :: f2
     real(wp), dimension(:, :, :), intent(in), target :: f3
@@ -797,6 +798,10 @@ contains
     real(wp), dimension(:, :, :), intent(inout), target :: rh8
     real(wp), dimension(:), intent(in), target :: dsp
     integer, intent(in) :: jb_in, je_in, kb_in, ke_in, lb_in, le_in, dir_in
+    !> leading dimension of each bound class: the flux/alpha rows share MFC's idwbuff
+    !! bounds, the rhs rows are (0:m, 0:n, 0:p) and the spacing is (-buff:m+buff).
+    !! The dummies are sections (see `ptr`), so their own size is not the parent's.
+    integer, intent(in) :: ext_f, ext_r, ext_s
 
     integer :: lbnd(3), b(6)
     logical, save :: announced = .false.
@@ -805,67 +810,66 @@ contains
     type(c_ptr) :: f1_dev, f2_dev, f3_dev, f4_dev, f5_dev, f6_dev, f7_dev, f8_dev, fsrc_dev, qa1_dev, qa2_dev, rh1_dev, rh2_dev, rh3_dev, rh4_dev, rh5_dev, rh6_dev, rh7_dev, rh8_dev, dsp_dev
 
     lbnd = [lbound(f1, 1), lbound(f1, 2), lbound(f1, 3)]
-    ext64 = int(size(f1, 1), c_int64_t)
     b = [jb_in, je_in, kb_in, ke_in, lb_in, le_in]
 
-    f1_dev = acc_deviceptr_(c_loc(f1(jb_in - lbnd(1) + 1, &
-                                    & kb_in - lbnd(2) + 1, &
-                                    & lb_in - lbnd(3) + 1)))
-    f2_dev = acc_deviceptr_(c_loc(f2(jb_in - lbnd(1) + 1, &
-                                    & kb_in - lbnd(2) + 1, &
-                                    & lb_in - lbnd(3) + 1)))
-    f3_dev = acc_deviceptr_(c_loc(f3(jb_in - lbnd(1) + 1, &
-                                    & kb_in - lbnd(2) + 1, &
-                                    & lb_in - lbnd(3) + 1)))
-    f4_dev = acc_deviceptr_(c_loc(f4(jb_in - lbnd(1) + 1, &
-                                    & kb_in - lbnd(2) + 1, &
-                                    & lb_in - lbnd(3) + 1)))
-    f5_dev = acc_deviceptr_(c_loc(f5(jb_in - lbnd(1) + 1, &
-                                    & kb_in - lbnd(2) + 1, &
-                                    & lb_in - lbnd(3) + 1)))
-    f6_dev = acc_deviceptr_(c_loc(f6(jb_in - lbnd(1) + 1, &
-                                    & kb_in - lbnd(2) + 1, &
-                                    & lb_in - lbnd(3) + 1)))
-    f7_dev = acc_deviceptr_(c_loc(f7(jb_in - lbnd(1) + 1, &
-                                    & kb_in - lbnd(2) + 1, &
-                                    & lb_in - lbnd(3) + 1)))
-    f8_dev = acc_deviceptr_(c_loc(f8(jb_in - lbnd(1) + 1, &
-                                    & kb_in - lbnd(2) + 1, &
-                                    & lb_in - lbnd(3) + 1)))
-    fsrc_dev = acc_deviceptr_(c_loc(fsrc(jb_in - lbnd(1) + 1, &
-                                    & kb_in - lbnd(2) + 1, &
-                                    & lb_in - lbnd(3) + 1)))
-    qa1_dev = acc_deviceptr_(c_loc(qa1(jb_in - lbnd(1) + 1, &
-                                    & kb_in - lbnd(2) + 1, &
-                                    & lb_in - lbnd(3) + 1)))
-    qa2_dev = acc_deviceptr_(c_loc(qa2(jb_in - lbnd(1) + 1, &
-                                    & kb_in - lbnd(2) + 1, &
-                                    & lb_in - lbnd(3) + 1)))
-    rh1_dev = acc_deviceptr_(c_loc(rh1(jb_in - 0 + 1, &
-                                    & kb_in - 0 + 1, &
-                                    & lb_in - 0 + 1)))
-    rh2_dev = acc_deviceptr_(c_loc(rh2(jb_in - 0 + 1, &
-                                    & kb_in - 0 + 1, &
-                                    & lb_in - 0 + 1)))
-    rh3_dev = acc_deviceptr_(c_loc(rh3(jb_in - 0 + 1, &
-                                    & kb_in - 0 + 1, &
-                                    & lb_in - 0 + 1)))
-    rh4_dev = acc_deviceptr_(c_loc(rh4(jb_in - 0 + 1, &
-                                    & kb_in - 0 + 1, &
-                                    & lb_in - 0 + 1)))
-    rh5_dev = acc_deviceptr_(c_loc(rh5(jb_in - 0 + 1, &
-                                    & kb_in - 0 + 1, &
-                                    & lb_in - 0 + 1)))
-    rh6_dev = acc_deviceptr_(c_loc(rh6(jb_in - 0 + 1, &
-                                    & kb_in - 0 + 1, &
-                                    & lb_in - 0 + 1)))
-    rh7_dev = acc_deviceptr_(c_loc(rh7(jb_in - 0 + 1, &
-                                    & kb_in - 0 + 1, &
-                                    & lb_in - 0 + 1)))
-    rh8_dev = acc_deviceptr_(c_loc(rh8(jb_in - 0 + 1, &
-                                    & kb_in - 0 + 1, &
-                                    & lb_in - 0 + 1)))
-    dsp_dev = acc_deviceptr_(c_loc(dsp(jb_in + 1)))
+    f1_dev = acc_deviceptr_(c_loc(f1(lbound(f1, 1), &
+                                    & lbound(f1, 2), &
+                                    & lbound(f1, 3))))
+    f2_dev = acc_deviceptr_(c_loc(f2(lbound(f2, 1), &
+                                    & lbound(f2, 2), &
+                                    & lbound(f2, 3))))
+    f3_dev = acc_deviceptr_(c_loc(f3(lbound(f3, 1), &
+                                    & lbound(f3, 2), &
+                                    & lbound(f3, 3))))
+    f4_dev = acc_deviceptr_(c_loc(f4(lbound(f4, 1), &
+                                    & lbound(f4, 2), &
+                                    & lbound(f4, 3))))
+    f5_dev = acc_deviceptr_(c_loc(f5(lbound(f5, 1), &
+                                    & lbound(f5, 2), &
+                                    & lbound(f5, 3))))
+    f6_dev = acc_deviceptr_(c_loc(f6(lbound(f6, 1), &
+                                    & lbound(f6, 2), &
+                                    & lbound(f6, 3))))
+    f7_dev = acc_deviceptr_(c_loc(f7(lbound(f7, 1), &
+                                    & lbound(f7, 2), &
+                                    & lbound(f7, 3))))
+    f8_dev = acc_deviceptr_(c_loc(f8(lbound(f8, 1), &
+                                    & lbound(f8, 2), &
+                                    & lbound(f8, 3))))
+    fsrc_dev = acc_deviceptr_(c_loc(fsrc(lbound(fsrc, 1), &
+                                    & lbound(fsrc, 2), &
+                                    & lbound(fsrc, 3))))
+    qa1_dev = acc_deviceptr_(c_loc(qa1(lbound(qa1, 1), &
+                                    & lbound(qa1, 2), &
+                                    & lbound(qa1, 3))))
+    qa2_dev = acc_deviceptr_(c_loc(qa2(lbound(qa2, 1), &
+                                    & lbound(qa2, 2), &
+                                    & lbound(qa2, 3))))
+    rh1_dev = acc_deviceptr_(c_loc(rh1(lbound(rh1, 1), &
+                                    & lbound(rh1, 2), &
+                                    & lbound(rh1, 3))))
+    rh2_dev = acc_deviceptr_(c_loc(rh2(lbound(rh2, 1), &
+                                    & lbound(rh2, 2), &
+                                    & lbound(rh2, 3))))
+    rh3_dev = acc_deviceptr_(c_loc(rh3(lbound(rh3, 1), &
+                                    & lbound(rh3, 2), &
+                                    & lbound(rh3, 3))))
+    rh4_dev = acc_deviceptr_(c_loc(rh4(lbound(rh4, 1), &
+                                    & lbound(rh4, 2), &
+                                    & lbound(rh4, 3))))
+    rh5_dev = acc_deviceptr_(c_loc(rh5(lbound(rh5, 1), &
+                                    & lbound(rh5, 2), &
+                                    & lbound(rh5, 3))))
+    rh6_dev = acc_deviceptr_(c_loc(rh6(lbound(rh6, 1), &
+                                    & lbound(rh6, 2), &
+                                    & lbound(rh6, 3))))
+    rh7_dev = acc_deviceptr_(c_loc(rh7(lbound(rh7, 1), &
+                                    & lbound(rh7, 2), &
+                                    & lbound(rh7, 3))))
+    rh8_dev = acc_deviceptr_(c_loc(rh8(lbound(rh8, 1), &
+                                    & lbound(rh8, 2), &
+                                    & lbound(rh8, 3))))
+    dsp_dev = acc_deviceptr_(c_loc(dsp(lbound(dsp, 1))))
     if (.not. c_associated(f1_dev) .or. .not. c_associated(f2_dev) .or. &
         & .not. c_associated(f3_dev) .or. .not. c_associated(f4_dev) .or. &
         & .not. c_associated(f5_dev) .or. .not. c_associated(f6_dev) .or. &
@@ -901,49 +905,91 @@ contains
 
     select case (dir_in)
     case (1)   ! x
-      x_state = fdiff_src_init_x(ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), int(b(5), c_int), int(b(6), c_int), ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64)
+      x_state = fdiff_src_init_x(int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
+                                  int(b(5), c_int), int(b(6), c_int), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t))
       call fdiff_src_run_x(x_state, &
           & dsp_dev, f1_dev, f2_dev, f3_dev, f4_dev, f5_dev, &
           & f6_dev, f7_dev, f8_dev, fsrc_dev, qa1_dev, qa2_dev, &
           & rh1_dev, rh2_dev, rh3_dev, rh4_dev, rh5_dev, rh6_dev, &
-          & rh7_dev, rh8_dev, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
-          & int(b(5), c_int), int(b(6), c_int), ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64)
+          & rh7_dev, rh8_dev, int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+          & int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+          & int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+          & int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
+          & int(b(5), c_int), int(b(6), c_int), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+          & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+          & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+          & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t))
       ierr = fdiff_src_exit_x(x_state)
     case (2)   ! y
-      y_state = fdiff_src_init_y(ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), int(b(5), c_int), int(b(6), c_int), ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64)
+      y_state = fdiff_src_init_y(int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
+                                  int(b(5), c_int), int(b(6), c_int), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t))
       call fdiff_src_run_y(y_state, &
           & dsp_dev, f1_dev, f2_dev, f3_dev, f4_dev, f5_dev, &
           & f6_dev, f7_dev, f8_dev, fsrc_dev, qa1_dev, qa2_dev, &
           & rh1_dev, rh2_dev, rh3_dev, rh4_dev, rh5_dev, rh6_dev, &
-          & rh7_dev, rh8_dev, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
-          & int(b(5), c_int), int(b(6), c_int), ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64)
+          & rh7_dev, rh8_dev, int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+          & int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+          & int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+          & int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
+          & int(b(5), c_int), int(b(6), c_int), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+          & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+          & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+          & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t))
       ierr = fdiff_src_exit_y(y_state)
     case (3)   ! z
-      z_state = fdiff_src_init_z(ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), int(b(5), c_int), int(b(6), c_int), ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64, ext64)
+      z_state = fdiff_src_init_z(int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
+                                  int(b(5), c_int), int(b(6), c_int), int(ext_f, c_int64_t), &
+                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                  int(ext_r, c_int64_t))
       call fdiff_src_run_z(z_state, &
           & dsp_dev, f1_dev, f2_dev, f3_dev, f4_dev, f5_dev, &
           & f6_dev, f7_dev, f8_dev, fsrc_dev, qa1_dev, qa2_dev, &
           & rh1_dev, rh2_dev, rh3_dev, rh4_dev, rh5_dev, rh6_dev, &
-          & rh7_dev, rh8_dev, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
-          & int(b(5), c_int), int(b(6), c_int), ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64, ext64, ext64, &
-          & ext64, ext64, ext64, ext64)
+          & rh7_dev, rh8_dev, int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+          & int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+          & int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+          & int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
+          & int(b(5), c_int), int(b(6), c_int), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+          & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+          & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+          & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t))
       ierr = fdiff_src_exit_z(z_state)
     case default
       print *, 'm_dace_kernels_fdiff_src: bad direction', dir_in
