@@ -45,6 +45,19 @@ set(MFC_DACE_LIBS
     CACHE STRING "DaCe production kernel libraries to link")
 
 
+# M4 (WENO3): the fused WENO3-mapped kernel family, baked at buff=3 (inviscid WENO3 is
+# buff = weno_polyn + 2 = 3, where WENO5 is 4).  A binary serves exactly one buff_size, so these
+# libs can only join a build configured for buff=3 -- hence an option rather than another entry
+# in MFC_DACE_LIBS, which every buff=4/6 build would then also need.
+option(MFC_DACE_WENO3 "Also link the fused WENO3 kernel family (requires MFC_DACE_BAKED_BUFF=3)" OFF)
+if (MFC_DACE_WENO3)
+    list(APPEND MFC_DACE_LIBS
+        "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_fused3_x.so"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_fused3_y.so"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_fused3_z.so")
+    add_compile_definitions(MFC_DACE_WENO3)
+endif()
+
 # A DaCe kernel library is baked for exactly one buff_size (the ghost-cell offset is either
 # a substituted literal - the sweep TUs, see scripts/mfc_dace_build.py - or assumed by the
 # shim's pack).  Each bake records the buff it used in <lib>.baked_buff; refuse a build whose

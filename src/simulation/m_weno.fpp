@@ -35,6 +35,17 @@ module m_weno
     logical, dimension(3) :: dace_fused_weno_active = [.false., .false., .false.]
     public :: dace_fused_weno_active
 
+    !> M4 fused WENO3: the same verdict for the weno_order == 3 family, which is a separate
+    !! library set (a library serves one weno_order) and therefore only exists in a build
+    !! configured for it.  Outside such a build this is a constant .false., so the guard sites
+    !! below can name it unconditionally without dragging the shim into the link.
+#if defined(MFC_DACE_WENO3)
+    logical, dimension(3) :: dace_fused3_weno_active = [.false., .false., .false.]
+#else
+    logical, parameter, dimension(3) :: dace_fused3_weno_active = [.false., .false., .false.]
+#endif
+    public :: dace_fused3_weno_active
+
     !> @name The cell-average variables that will be WENO-reconstructed unpacked into an array for performance
     !> @{
     real(wp), allocatable, dimension(:,:,:,:) :: v_rs_weno
@@ -936,6 +947,9 @@ contains
                                        & s_dace_weno_z, weno_dace_contract, &
                                        & weno_dace_mode, weno_dace_dirs
         use m_dace_kernels_fused, only: dace_fused_contract, dace_fused_dirs
+#if defined(MFC_DACE_WENO3)
+        use m_dace_kernels_fused3, only: dace_fused3_contract, dace_fused3_dirs
+#endif
 #endif
         type(scalar_field), dimension(1:), intent(in)                                          :: v_vf
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vL_rs_vf_x
@@ -1018,6 +1032,19 @@ contains
         if (weno_order /= 1) then
             call s_pack_weno_input_arr(v_vf)
         end if
+
+#if defined(MFC_DACE) && defined(MFC_DACE_WENO3)
+        !> M4 fused WENO3: the verdict for the weno_order == 3 family.  It is order-generic, so it
+        !! is set HERE -- before the order split -- for whichever direction this call handles.
+        !! M1's verdict lives inside the weno_order == 5 branch; putting the WENO3 one there made it
+        !! unreachable for a WENO3 case (and the gate then passed vacuously, which is how it was
+        !! caught).  No `weno_dace_contract()` clause: that requires weno_order == 5 by design.
+        if (weno_dir >= 1 .and. weno_dir <= 3) then
+            dace_fused3_weno_active(weno_dir) = &
+                & dace_fused3_dirs(weno_dir) .and. dace_fused3_contract() .and. &
+                & v_size == 8 .and. uniform_grid(weno_dir)
+        end if
+#endif
 
         if (weno_order == 3) then
             #:for WENO_DIR, XYZ, STENCIL_VAR, COORDS, X_BND, Y_BND, Z_BND in &
@@ -1134,6 +1161,7 @@ contains
 #endif
 #if defined(MFC_DACE) && !defined(MFC_DACE_WENO_OFF)
                         if (.not. dace_fused_weno_active(${WENO_DIR}$) .and. &
+                            & .not. dace_fused3_weno_active(${WENO_DIR}$) .and. &
                             & weno_dace_dirs(${WENO_DIR}$) .and. &
                             & weno_dace_mode() >= 1 .and. weno_dace_contract() .and. &
                             & v_size == 8 .and. uniform_grid(${WENO_DIR}$)) then
@@ -1155,6 +1183,7 @@ contains
                             #:endif
                         end if
                         if (.not. dace_fused_weno_active(${WENO_DIR}$) .and. &
+                            & .not. dace_fused3_weno_active(${WENO_DIR}$) .and. &
                             & .not. (weno_dace_dirs(${WENO_DIR}$) .and. &
                                    & weno_dace_mode() == 1 .and. weno_dace_contract() .and. &
                                    & v_size == 8 .and. uniform_grid(${WENO_DIR}$))) then
