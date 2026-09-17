@@ -23,6 +23,11 @@ module m_weno
     public :: v_rs_weno, poly_coef_cbL_x, poly_coef_cbR_x, d_cbL_x, d_cbR_x, &
               poly_coef_cbL_y, poly_coef_cbR_y, d_cbL_y, d_cbR_y, &
               poly_coef_cbL_z, poly_coef_cbR_z, d_cbL_z, d_cbR_z
+    !> M4 (WENO3): the smoothness-indicator coefficients.  WENO5 computes beta analytically inside the
+    !! kernel and never needs these; the WENO3 body reads them from a table, so the WENO3 fused
+    !! dispatch needs them here too.  Already device-resident (GPU_DECLARE + the GPU_UPDATE in
+    !! s_initialize_weno), so the shim resolves them with acc_deviceptr like the other tables.
+    public :: beta_coef_x, beta_coef_y, beta_coef_z
 
     !> M1 fused sweep: which directions this step's reconstruction was skipped for
     !! because the fused HLLC kernel does it (see the dispatch in s_weno).  Read by
