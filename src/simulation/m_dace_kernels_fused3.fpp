@@ -2554,13 +2554,9 @@ contains
     integer :: st
     logical, save :: cached = .false.
     logical, save :: cached_val(3) = [.true., .true., .true.]
-    ! WENO3's fused result still diverges from the stock WENO3 path (small and
-    ! systematic -- ~1e-5..1e-2 relative, amplified at shocks -- so the states differ
-    ! before the solve), so this family is opt-in: MFC_DACE_FUSED=1 turns it on.  The
-    ! TU is validated bit-identical to MFC's mapped weno_order == 3 body off-GPU, so the
-    ! difference is in the fused plumbing, not the arithmetic.  Leave it off until that
-    ! is found.
-    cached_val = [.false., .false., .false.]
+    ! (validated: the fused WENO3 sweep is bit-identical to the OpenACC control, so like
+    ! M1's this family is on by default; the build-level MFC_DACE_WENO3 guard is what
+    ! keeps it out of builds that do not link it.)
 
     if (.not. cached) then
       call get_environment_variable('MFC_DACE_FUSED', env, status=st)
