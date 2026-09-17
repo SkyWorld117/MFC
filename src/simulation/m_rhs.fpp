@@ -36,6 +36,11 @@ module m_rhs
     use m_igr
     use m_thinc
     use m_pressure_relaxation
+#if defined(MFC_DACE)
+    !> M3: the fused flux-difference + alpha-advection-source dispatch (off unless
+    !! MFC_DACE_FDIFF_SRC is set, and only inside its case contract).
+    use m_dace_kernels_fdiff_src, only: s_dace_fdiff_src, fdiff_src_dirs, fdiff_src_contract
+#endif
 
     implicit none
 
@@ -1110,6 +1115,32 @@ contains
                 call s_cbc(q_prim_vf%vf, flux_n(idir)%vf, flux_src_n_vf%vf, idir, 1, irx, iry, irz)
             end if
 
+                ! MFC's OpenACC loops map these per-row fields per loop (copy-in and
+                ! copy-back), so the host copies are current but the arrays are not persistently
+                ! mapped and acc_deviceptr returns null for them.  Enter them here, where the
+                ! concrete arrays are in scope (the macros.fpp pattern), so the DaCe kernel gets
+                ! real device pointers.
+                !$acc enter data copyin(flux_n(1)%vf, flux_src_n(1)%vf)
+    !$acc enter data copyin(flux_n(1)%vf(1)%sf, flux_n(1)%vf(2)%sf, &
+                !$acc & flux_n(1)%vf(3)%sf, flux_n(1)%vf(4)%sf, flux_n(1)%vf(5)%sf, &
+                !$acc & flux_n(1)%vf(6)%sf, flux_n(1)%vf(7)%sf, flux_n(1)%vf(8)%sf, &
+                !$acc & flux_src_n(1)%vf(eqn_idx%adv%beg)%sf)
+            if (fdiff_src_dirs(1) .and. fdiff_src_contract()) then
+                !> M3: the fused flux difference + alpha advection source in one kernel per
+                !! direction (the cuf_sweeps shape).  The CBC face surgery above has already
+                !! run, so the kernel reads exactly the fluxes the stock loops would.
+                call s_dace_fdiff_src(flux_n(1)%vf(1)%sf, flux_n(1)%vf(2)%sf, &
+                                      & flux_n(1)%vf(3)%sf, flux_n(1)%vf(4)%sf, &
+                                      & flux_n(1)%vf(5)%sf, flux_n(1)%vf(6)%sf, &
+                                      & flux_n(1)%vf(7)%sf, flux_n(1)%vf(8)%sf, &
+                                      & flux_src_n(1)%vf(eqn_idx%adv%beg)%sf, &
+                                      & q_cons_vf%vf(eqn_idx%adv%beg)%sf, &
+                                      & q_cons_vf%vf(eqn_idx%adv%end)%sf, &
+                                      & rhs_vf(1)%sf, rhs_vf(2)%sf, rhs_vf(3)%sf, &
+                                      & rhs_vf(4)%sf, rhs_vf(5)%sf, rhs_vf(6)%sf, &
+                                      & rhs_vf(7)%sf, rhs_vf(8)%sf, &
+                                      & dx, 0, m, 0, n, 0, p, 1)
+            else
             if (hypo_nc_mode /= hypo_nc_mode_dual_pass) then
                 $:GPU_PARALLEL_LOOP(collapse=4,private='[j, k_loop, l_loop, q_loop, inv_ds, flux_face1, flux_face2]')
                 do j = 1, sys_size
@@ -1178,6 +1209,7 @@ contains
             end if
 
             call s_add_directional_advection_source_terms(idir, rhs_vf, q_cons_vf, q_prim_vf, flux_src_n_vf, Kterm)
+            end if
         case (2)  ! y-direction
             if (bc_y%beg <= BC_CHAR_SLIP_WALL .and. bc_y%beg >= BC_CHAR_SUP_OUTFLOW) then
                 call s_cbc(q_prim_vf%vf, flux_n(idir)%vf, flux_src_n_vf%vf, idir, -1, irx, iry, irz)
@@ -1186,6 +1218,29 @@ contains
                 call s_cbc(q_prim_vf%vf, flux_n(idir)%vf, flux_src_n_vf%vf, idir, 1, irx, iry, irz)
             end if
 
+                ! MFC's OpenACC loops map these per-row fields per loop (copy-in and
+                ! copy-back), so the host copies are current but the arrays are not persistently
+                ! mapped and acc_deviceptr returns null for them.  Enter them here, where the
+                ! concrete arrays are in scope (the macros.fpp pattern), so the DaCe kernel gets
+                ! real device pointers.
+                !$acc enter data copyin(flux_n(2)%vf, flux_src_n(2)%vf)
+    !$acc enter data copyin(flux_n(2)%vf(1)%sf, flux_n(2)%vf(2)%sf, &
+                !$acc & flux_n(2)%vf(3)%sf, flux_n(2)%vf(4)%sf, flux_n(2)%vf(5)%sf, &
+                !$acc & flux_n(2)%vf(6)%sf, flux_n(2)%vf(7)%sf, flux_n(2)%vf(8)%sf, &
+                !$acc & flux_src_n(2)%vf(eqn_idx%adv%beg)%sf)
+            if (fdiff_src_dirs(2) .and. fdiff_src_contract()) then
+                call s_dace_fdiff_src(flux_n(2)%vf(1)%sf, flux_n(2)%vf(2)%sf, &
+                                      & flux_n(2)%vf(3)%sf, flux_n(2)%vf(4)%sf, &
+                                      & flux_n(2)%vf(5)%sf, flux_n(2)%vf(6)%sf, &
+                                      & flux_n(2)%vf(7)%sf, flux_n(2)%vf(8)%sf, &
+                                      & flux_src_n(2)%vf(eqn_idx%adv%beg)%sf, &
+                                      & q_cons_vf%vf(eqn_idx%adv%beg)%sf, &
+                                      & q_cons_vf%vf(eqn_idx%adv%end)%sf, &
+                                      & rhs_vf(1)%sf, rhs_vf(2)%sf, rhs_vf(3)%sf, &
+                                      & rhs_vf(4)%sf, rhs_vf(5)%sf, rhs_vf(6)%sf, &
+                                      & rhs_vf(7)%sf, rhs_vf(8)%sf, &
+                                      & dy, 0, m, 0, n, 0, p, 2)
+            else
             if (hypo_nc_mode /= hypo_nc_mode_dual_pass) then
                 $:GPU_PARALLEL_LOOP(collapse=4,private='[j, k, l, q, inv_ds, flux_face1, flux_face2]')
                 do j = 1, sys_size
@@ -1310,6 +1365,7 @@ contains
             end if
 
             call s_add_directional_advection_source_terms(idir, rhs_vf, q_cons_vf, q_prim_vf, flux_src_n_vf, Kterm)
+            end if
         case (3)  ! z-direction
             if (bc_z%beg <= BC_CHAR_SLIP_WALL .and. bc_z%beg >= BC_CHAR_SUP_OUTFLOW) then
                 call s_cbc(q_prim_vf%vf, flux_n(idir)%vf, flux_src_n_vf%vf, idir, -1, irx, iry, irz)
@@ -1348,6 +1404,29 @@ contains
                 end do
                 $:END_GPU_PARALLEL_LOOP()
             else  ! Cartesian Coordinates
+                    ! MFC's OpenACC loops map these per-row fields per loop (copy-in and
+                ! copy-back), so the host copies are current but the arrays are not persistently
+                ! mapped and acc_deviceptr returns null for them.  Enter them here, where the
+                ! concrete arrays are in scope (the macros.fpp pattern), so the DaCe kernel gets
+                ! real device pointers.
+                !$acc enter data copyin(flux_n(3)%vf, flux_src_n(3)%vf)
+    !$acc enter data copyin(flux_n(3)%vf(1)%sf, flux_n(3)%vf(2)%sf, &
+                !$acc & flux_n(3)%vf(3)%sf, flux_n(3)%vf(4)%sf, flux_n(3)%vf(5)%sf, &
+                !$acc & flux_n(3)%vf(6)%sf, flux_n(3)%vf(7)%sf, flux_n(3)%vf(8)%sf, &
+                !$acc & flux_src_n(3)%vf(eqn_idx%adv%beg)%sf)
+            if (fdiff_src_dirs(3) .and. fdiff_src_contract()) then
+                    call s_dace_fdiff_src(flux_n(3)%vf(1)%sf, flux_n(3)%vf(2)%sf, &
+                                          & flux_n(3)%vf(3)%sf, flux_n(3)%vf(4)%sf, &
+                                          & flux_n(3)%vf(5)%sf, flux_n(3)%vf(6)%sf, &
+                                          & flux_n(3)%vf(7)%sf, flux_n(3)%vf(8)%sf, &
+                                          & flux_src_n(3)%vf(eqn_idx%adv%beg)%sf, &
+                                          & q_cons_vf%vf(eqn_idx%adv%beg)%sf, &
+                                          & q_cons_vf%vf(eqn_idx%adv%end)%sf, &
+                                          & rhs_vf(1)%sf, rhs_vf(2)%sf, rhs_vf(3)%sf, &
+                                          & rhs_vf(4)%sf, rhs_vf(5)%sf, rhs_vf(6)%sf, &
+                                          & rhs_vf(7)%sf, rhs_vf(8)%sf, &
+                                          & dz, 0, m, 0, n, 0, p, 3)
+                else
                 if (hypo_nc_mode /= hypo_nc_mode_dual_pass) then
                     $:GPU_PARALLEL_LOOP(collapse=4,private='[j, k, l, q, inv_ds, flux_face1, flux_face2]')
                     do j = 1, sys_size
@@ -1417,6 +1496,7 @@ contains
             end if
 
             call s_add_directional_advection_source_terms(idir, rhs_vf, q_cons_vf, q_prim_vf, flux_src_n_vf, Kterm)
+                end if
         end select
 
     contains

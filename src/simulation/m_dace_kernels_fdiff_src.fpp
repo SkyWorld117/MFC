@@ -4,9 +4,10 @@ module m_dace_kernels_fdiff_src
                                          c_associated, c_loc, c_null_ptr
   use m_derived_types
   use m_global_parameters
+  use m_constants, only: adv_src_mode_vel_iface, model_eqns_5eq, hypo_nc_mode_dual_pass
   implicit none
   private
-  public :: s_dace_fdiff_src
+  public :: s_dace_fdiff_src, fdiff_src_dirs, fdiff_src_contract
 
   interface
     function acc_deviceptr_(hostptr) bind(C, name='acc_deviceptr')
@@ -728,6 +729,46 @@ module m_dace_kernels_fdiff_src
 
 contains
 
+  !> M3's switch + case contract: MFC_DACE_FDIFF_SRC turns the fused flux-difference /
+  !! alpha-advection kernel on (unset or 0 = the stock pair, unchanged) and
+  !! MFC_DACE_FDIFF_SRC_DIRS is a "101"-style per-direction mask.  The contract lists every
+  !! case flag the stock arithmetic the TU transcribes depends on; outside it the stock loops
+  !! run exactly as before.
+  function fdiff_src_dirs(nd) result(c)
+    integer, intent(in) :: nd
+    logical :: c
+    character(len=8) :: env
+    integer :: st
+    logical, save :: cached = .false.
+    logical, save :: cached_val(3) = [.false., .false., .false.]
+
+    if (.not. cached) then
+      call get_environment_variable('MFC_DACE_FDIFF_SRC', env, status=st)
+      if (st == 0 .and. len_trim(env) >= 1) cached_val = env(1:1) /= '0'
+      call get_environment_variable('MFC_DACE_FDIFF_SRC_DIRS', env, status=st)
+      if (st == 0 .and. len_trim(env) >= 1) then
+        cached_val(1) = cached_val(1) .and. env(1:1) == '1'
+        cached_val(2) = cached_val(2) .and. (len_trim(env) < 2 .or. env(2:2) == '1')
+        cached_val(3) = cached_val(3) .and. (len_trim(env) < 3 .or. env(3:3) == '1')
+      end if
+      cached = .true.
+    end if
+    c = cached_val(nd)
+  end function fdiff_src_dirs
+
+  !> The bake's case contract, checked at the dispatch site.
+  function fdiff_src_contract() result(c)
+    logical :: c
+    c = (model_eqns == model_eqns_5eq .and. num_fluids == 2 .and. num_dims == 3 .and. &
+         & adv_src_mode == adv_src_mode_vel_iface .and. &
+         & .not. alt_soundspeed .and. .not. cyl_coord .and. .not. igr .and. &
+         & hypo_nc_mode /= hypo_nc_mode_dual_pass .and. &
+         & .not. surface_tension .and. .not. chemistry .and. .not. bubbles_euler .and. &
+         & .not. qbmm .and. .not. relativity .and. .not. hypoelasticity .and. &
+         & .not. mpp_lim .and. .not. cont_damage)
+  end function fdiff_src_contract
+
+
   !> M3: the fused directional flux difference + volume-fraction advection source.  `f1..f8` are
   !! the direction's face-flux rows, `fsrc` the advection flux_src row, `qa1/qa2` the conserved
   !! alphas, `rh1..rh8` the rhs rows and `dsp` the direction's cell spacing.  Every field crosses
@@ -758,6 +799,7 @@ contains
     integer, intent(in) :: jb_in, je_in, kb_in, ke_in, lb_in, le_in, dir_in
 
     integer :: lbnd(3), b(6)
+    logical, save :: announced = .false.
     integer(c_int64_t) :: ext64
     integer(c_int) :: ierr
     type(c_ptr) :: f1_dev, f2_dev, f3_dev, f4_dev, f5_dev, f6_dev, f7_dev, f8_dev, fsrc_dev, qa1_dev, qa2_dev, rh1_dev, rh2_dev, rh3_dev, rh4_dev, rh5_dev, rh6_dev, rh7_dev, rh8_dev, dsp_dev
@@ -824,10 +866,37 @@ contains
                                     & kb_in - 0 + 1, &
                                     & lb_in - 0 + 1)))
     dsp_dev = acc_deviceptr_(c_loc(dsp(jb_in + 1)))
-    if (.not. c_associated(f1_dev) .or. .not. c_associated(rh1_dev) .or. &
+    if (.not. c_associated(f1_dev) .or. .not. c_associated(f2_dev) .or. &
+        & .not. c_associated(f3_dev) .or. .not. c_associated(f4_dev) .or. &
+        & .not. c_associated(f5_dev) .or. .not. c_associated(f6_dev) .or. &
+        & .not. c_associated(f7_dev) .or. .not. c_associated(f8_dev) .or. &
+        & .not. c_associated(fsrc_dev) .or. .not. c_associated(qa1_dev) .or. &
+        & .not. c_associated(qa2_dev) .or. .not. c_associated(rh1_dev) .or. &
         & .not. c_associated(dsp_dev)) then
-      print *, 'm_dace_kernels_fdiff_src: a field is not device-present'
+      ! name the offender: the fields cross as raw device pointers, and a host-only array is the
+      ! usual reason one of them is null
+      if (.not. c_associated(f1_dev)) print *, 'm_dace_kernels_fdiff_src: f1 not device-present'
+      if (.not. c_associated(f2_dev)) print *, 'm_dace_kernels_fdiff_src: f2 not device-present'
+      if (.not. c_associated(f3_dev)) print *, 'm_dace_kernels_fdiff_src: f3 not device-present'
+      if (.not. c_associated(f4_dev)) print *, 'm_dace_kernels_fdiff_src: f4 not device-present'
+      if (.not. c_associated(f5_dev)) print *, 'm_dace_kernels_fdiff_src: f5 not device-present'
+      if (.not. c_associated(f6_dev)) print *, 'm_dace_kernels_fdiff_src: f6 not device-present'
+      if (.not. c_associated(f7_dev)) print *, 'm_dace_kernels_fdiff_src: f7 not device-present'
+      if (.not. c_associated(f8_dev)) print *, 'm_dace_kernels_fdiff_src: f8 not device-present'
+      if (.not. c_associated(fsrc_dev)) print *, 'm_dace_kernels_fdiff_src: fsrc not device-present'
+      if (.not. c_associated(qa1_dev)) print *, 'm_dace_kernels_fdiff_src: qa1 not device-present'
+      if (.not. c_associated(qa2_dev)) print *, 'm_dace_kernels_fdiff_src: qa2 not device-present'
+      if (.not. c_associated(rh1_dev)) print *, 'm_dace_kernels_fdiff_src: rh1 not device-present'
+      if (.not. c_associated(dsp_dev)) print *, 'm_dace_kernels_fdiff_src: dsp not device-present'
       error stop 1
+    end if
+
+    ! one line per run: a gate run's log then says which dispatch produced it (a stack of
+    ! bit-identical comparisons cannot tell the fused path from the stock one)
+    if (.not. announced) then
+      print *, 'm_dace_kernels_fdiff_src: M3 fused fdiff+alpha dispatch active (x,y,z)=', &
+               fdiff_src_dirs(1), fdiff_src_dirs(2), fdiff_src_dirs(3)
+      announced = .true.
     end if
 
     select case (dir_in)
