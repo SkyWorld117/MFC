@@ -731,7 +731,8 @@ contains
 
   !> M3's switch + case contract: MFC_DACE_FDIFF_SRC turns the fused flux-difference /
   !! alpha-advection kernel on (unset or 0 = the stock pair, unchanged) and
-  !! MFC_DACE_FDIFF_SRC_DIRS is a "101"-style per-direction mask.  The contract lists every
+  !! MFC_DACE_FDIFF_SRC_DIRS is a "101"-style per-direction mask.
+  !! The Z DIRECTION IS DISABLED regardless of the mask (see the guard in the body).  The contract lists every
   !! case flag the stock arithmetic the TU transcribes depends on; outside it the stock loops
   !! run exactly as before.
   function fdiff_src_dirs(nd) result(c)
@@ -751,6 +752,17 @@ contains
         cached_val(2) = cached_val(2) .and. (len_trim(env) < 2 .or. env(2:2) == '1')
         cached_val(3) = cached_val(3) .and. (len_trim(env) < 3 .or. env(3:3) == '1')
       end if
+      ! ---- z IS DISABLED PENDING A FIX ------------------------------------------------
+      ! x and y are bit-identical to the stock loops on every case tried (vis32R, vis32y,
+      ! vis32z with the matching mask), but z diverges from step 1 on a z-varying case: the
+      ! error is proportional to the local z-flux variation -- zero in the smooth regions,
+      ! largest at the domain boundaries and at the IC discontinuity, ~1e-3 relative on the
+      ! energy, and it affects the flux-difference rows, not just the advection rows.  The TU
+      ! reads the same indices as the stock z loop (natural subscripts, dz on the swept
+      ! counter), so the cause is in the data path, not the emitted arithmetic.  Until it is
+      ! found, the stock loops keep running for z no matter what the mask says: enabling a
+      ! kernel that silently returns wrong physics is worse than not enabling it.
+      cached_val(3) = .false.
       cached = .true.
     end if
     c = cached_val(nd)
