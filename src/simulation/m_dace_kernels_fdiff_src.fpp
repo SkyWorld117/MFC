@@ -760,16 +760,16 @@ contains
         cached_val(2) = cached_val(2) .and. (len_trim(env) < 2 .or. env(2:2) == '1')
         cached_val(3) = cached_val(3) .and. (len_trim(env) < 3 .or. env(3:3) == '1')
       end if
-      ! ---- z IS DISABLED: reproduced 2026-09-17 with trustworthy fixtures -------------
-      ! x-only and y-only are bit-identical on the same run; z-only DIVERGES.  Reproduce with
-      ! scripts/m3z_repro.sh, which builds a *viscous z-varying shock* case by transposing
-      ! vis32R's IC and compares against the stock baseline -- a self-verifying A/B (M3 only
-      ! replaces the stock loops, so equality is required), which is what the original vis32z
-      ! case can no longer provide: its ICs and reference were consumed by earlier runs.
-      ! Cleared: the TU (reference-free z-only-field test), memory errors (compute-sanitizer),
-      ! the ABI (probe: bounds/extents/strides), baked symbols (the bake records none), and the
-      ! flux_src-adv-row contents (copyin+attach did not change the outcome).
-      cached_val(3) = .false.
+      ! ---- z is ENABLED again (2026-09-18): the divergence it was contained for was an
+      ! artefact.  The shim declared its twenty device pointers and never assigned them, so the
+      ! null-check read uninitialised stack and the kernel was launched with stack garbage.  With
+      ! the assignments emitted, all three directions are bit-identical against the stock loops on
+      ! the real viscous case (vis32R, buff=6: masks 100 / 010 / 001 and the full mask, 104 field
+      ! files each, double filter).  The repro that used to "show" the z bug
+      ! (scripts/m3z_repro.sh, a transposed-IC fixture) now diverges for *x* as well, so it was
+      ! testing its own fixture, not the direction: its ICs have been consumed by earlier runs
+      ! (they read as denormals) and it no longer distinguishes anything.  Validate a direction on
+      ! the real case, with an IC regenerated from the config, never on that fixture.
       cached = .true.
     end if
     c = cached_val(nd)
@@ -838,6 +838,71 @@ contains
     integer(c_int) :: ierr
     type(c_ptr) :: f1_dev, f2_dev, f3_dev, f4_dev, f5_dev, f6_dev, f7_dev, f8_dev, fsrc_dev, qa1_dev, qa2_dev, rh1_dev, rh2_dev, rh3_dev, rh4_dev, rh5_dev, rh6_dev, rh7_dev, rh8_dev, dsp_dev
 
+    ! Resolve each field's device address.  THIS ASSIGNMENT IS LOAD-BEARING and used to be missing:
+    ! `ptr` was built and never emitted, so every *_dev stayed uninitialised stack, the null-check
+    ! below then reported whichever garbage happened to be zero, and the kernel was launched with
+    ! whatever the stack held.  It looked exactly like "the runtime did not map these arrays" --
+    ! partial, non-patterned nulls one run and all-null the next -- and sent a long hunt after an
+    ! OpenACC mapping problem that did not exist.  Whatever else changes here, keep this emitted.
+    f1_dev = acc_deviceptr_(c_loc(f1(lbound(f1, 1), &
+                                    & lbound(f1, 2), &
+                                    & lbound(f1, 3))))
+    f2_dev = acc_deviceptr_(c_loc(f2(lbound(f2, 1), &
+                                    & lbound(f2, 2), &
+                                    & lbound(f2, 3))))
+    f3_dev = acc_deviceptr_(c_loc(f3(lbound(f3, 1), &
+                                    & lbound(f3, 2), &
+                                    & lbound(f3, 3))))
+    f4_dev = acc_deviceptr_(c_loc(f4(lbound(f4, 1), &
+                                    & lbound(f4, 2), &
+                                    & lbound(f4, 3))))
+    f5_dev = acc_deviceptr_(c_loc(f5(lbound(f5, 1), &
+                                    & lbound(f5, 2), &
+                                    & lbound(f5, 3))))
+    f6_dev = acc_deviceptr_(c_loc(f6(lbound(f6, 1), &
+                                    & lbound(f6, 2), &
+                                    & lbound(f6, 3))))
+    f7_dev = acc_deviceptr_(c_loc(f7(lbound(f7, 1), &
+                                    & lbound(f7, 2), &
+                                    & lbound(f7, 3))))
+    f8_dev = acc_deviceptr_(c_loc(f8(lbound(f8, 1), &
+                                    & lbound(f8, 2), &
+                                    & lbound(f8, 3))))
+    fsrc_dev = acc_deviceptr_(c_loc(fsrc(lbound(fsrc, 1), &
+                                    & lbound(fsrc, 2), &
+                                    & lbound(fsrc, 3))))
+    qa1_dev = acc_deviceptr_(c_loc(qa1(lbound(qa1, 1), &
+                                    & lbound(qa1, 2), &
+                                    & lbound(qa1, 3))))
+    qa2_dev = acc_deviceptr_(c_loc(qa2(lbound(qa2, 1), &
+                                    & lbound(qa2, 2), &
+                                    & lbound(qa2, 3))))
+    rh1_dev = acc_deviceptr_(c_loc(rh1(lbound(rh1, 1), &
+                                    & lbound(rh1, 2), &
+                                    & lbound(rh1, 3))))
+    rh2_dev = acc_deviceptr_(c_loc(rh2(lbound(rh2, 1), &
+                                    & lbound(rh2, 2), &
+                                    & lbound(rh2, 3))))
+    rh3_dev = acc_deviceptr_(c_loc(rh3(lbound(rh3, 1), &
+                                    & lbound(rh3, 2), &
+                                    & lbound(rh3, 3))))
+    rh4_dev = acc_deviceptr_(c_loc(rh4(lbound(rh4, 1), &
+                                    & lbound(rh4, 2), &
+                                    & lbound(rh4, 3))))
+    rh5_dev = acc_deviceptr_(c_loc(rh5(lbound(rh5, 1), &
+                                    & lbound(rh5, 2), &
+                                    & lbound(rh5, 3))))
+    rh6_dev = acc_deviceptr_(c_loc(rh6(lbound(rh6, 1), &
+                                    & lbound(rh6, 2), &
+                                    & lbound(rh6, 3))))
+    rh7_dev = acc_deviceptr_(c_loc(rh7(lbound(rh7, 1), &
+                                    & lbound(rh7, 2), &
+                                    & lbound(rh7, 3))))
+    rh8_dev = acc_deviceptr_(c_loc(rh8(lbound(rh8, 1), &
+                                    & lbound(rh8, 2), &
+                                    & lbound(rh8, 3))))
+    dsp_dev = acc_deviceptr_(c_loc(dsp(lbound(dsp, 1))))
+
     lbnd = [lbound(f1, 1), lbound(f1, 2), lbound(f1, 3)]
     b = [jb_in, je_in, kb_in, ke_in, lb_in, le_in]
 
@@ -879,6 +944,18 @@ contains
                                         int(m3_nc*8, c_size_t), cpD2H)
           end do
         end do
+        ! A failed copy leaves the buffer at its allocated value, so an unchecked memcpy from a
+        ! null/unmapped device pointer reads as a clean "all zeros" -- which is exactly how the
+        ! first version of this probe produced the (wrong) conclusion that the kernel sees qa=0.
+        ! Print the status and the three pointers, and stop: a dump that cannot be trusted must
+        ! never look like data.
+        if (m3_probe_ierr /= 0) then
+          print '(A,I0,A,3(I0,1X))', 'M3DUMP cudaMemcpy FAILED ierr=', m3_probe_ierr, &
+                  ' f6/fsrc/qa1 dev =', transfer(f6_dev, 0_c_int64_t), transfer(fsrc_dev, 0_c_int64_t), &
+                  transfer(qa1_dev, 0_c_int64_t)
+          deallocate (m3_probe_buf)
+          error stop 3
+        end if
         open (85, file='/tmp/M3DUMP.bin', form='unformatted', access='stream')
         write (85) m3_nc, ext_f, dir_in, m3_probe_buf
         close (85)
@@ -894,7 +971,11 @@ contains
         & .not. c_associated(qa2_dev) .or. .not. c_associated(rh1_dev) .or. &
         & .not. c_associated(dsp_dev)) then
       ! name the offender: the fields cross as raw device pointers, and a host-only array is the
-      ! usual reason one of them is null
+      ! usual reason one of them is null.  The direction and the dummy's own bounds go in the
+      ! header line: whether every direction fails (a plumbing fault) or only one (an addressing
+      ! fault), and what the shim was handed, is the first thing a reader needs.
+      print '(A,I0,A,6(I0,1X),A,3(I0,1X))', 'm_dace_kernels_fdiff_src: not device-present: dir=', dir_in, &
+              ' b=', b, ' f1 lb=', lbound(f1, 1), lbound(f1, 2), lbound(f1, 3)
       if (.not. c_associated(f1_dev)) print *, 'm_dace_kernels_fdiff_src: f1 not device-present'
       if (.not. c_associated(f2_dev)) print *, 'm_dace_kernels_fdiff_src: f2 not device-present'
       if (.not. c_associated(f3_dev)) print *, 'm_dace_kernels_fdiff_src: f3 not device-present'
