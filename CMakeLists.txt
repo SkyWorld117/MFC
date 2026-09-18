@@ -45,6 +45,8 @@ set(MFC_DACE_LIBS
     "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_periodic_x.so"
     "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_periodic_y.so"
     "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_periodic_z.so"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_visc_avg_x.so"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_visc_avg_z.so"
     CACHE STRING "DaCe production kernel libraries to link")
 
 
