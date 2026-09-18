@@ -895,20 +895,6 @@
          if (qbmm) then
              @:ALLOCATE(mom_sp_rsx_vf(-1:m+1, -1:n+1, -1:p+1, 1:4))
          end if
---- a/src/simulation/m_data_output.fpp
-+++ b/src/simulation/m_data_output.fpp
-@@ -327,6 +327,11 @@
-         end if
- 
-         do i = 1, sys_size
-+            ! The cons fields are declare-create'd (device-resident in the
-+            ! OpenACC build): without this update the text writer dumps the
-+            ! STALE HOST copy (= the initial state) — every q_cons_vf*.dat
-+            ! from this writer was the IC, not the evolved state.
-+            $:GPU_UPDATE(host='[q_cons_vf(i)%sf(:, :, :)]')
-             write (file_path, '(A,I0,A)') trim(t_step_dir) // '/q_cons_vf', i, '.dat'
- 
-             open (2, FILE=trim(file_path), form='unformatted', STATUS='new')
 --- a/src/simulation/m_start_up.fpp
 +++ b/src/simulation/m_start_up.fpp
 @@ -10,6 +10,8 @@
