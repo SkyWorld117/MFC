@@ -745,18 +745,25 @@ contains
   !> M3's switch + case contract: MFC_DACE_FDIFF_SRC turns the fused flux-difference /
   !! alpha-advection kernel on (unset or 0 = the stock pair, unchanged) and
   !! MFC_DACE_FDIFF_SRC_DIRS is a "101"-style per-direction mask.
-  !! The Z DIRECTION IS DISABLED regardless of the mask (see the guard in the body).  The contract lists every
-  !! case flag the stock arithmetic the TU transcribes depends on; outside it the stock loops
-  !! run exactly as before.
+  !! The contract lists every case flag the stock arithmetic the TU transcribes depends on; outside
+  !! it the stock loops run exactly as before.
   function fdiff_src_dirs(nd) result(c)
     integer, intent(in) :: nd
     logical :: c
     character(len=8) :: env
     integer :: st
     logical, save :: cached = .false.
-    logical, save :: cached_val(3) = [.false., .false., .false.]
+    logical, save :: cached_val(3) = [.true., .true., .true.]
 
     if (.not. cached) then
+      ! ON BY DEFAULT (2026-09-18), and the off-switch is MFC_DACE_FDIFF_SRC=0.  It was opt-in
+      ! because a measurement said it was 15% slower end to end; that regression was a launch
+      ! geometry defect in the kernel, since fixed, and the measurement now runs the other way and
+      ! grows with the grid -- the stage it replaces costs 1.57x more at 32^3 and 2.10x more at
+      ! 128^3 (32008 -> 15246 us over 36 launches), with run GPU time 447.2 -> 430.0 ms there, and
+      ! the field tree is bit-identical at both grids (32^3: 104 files, 128^3: 16).  Nothing this
+      ! dispatch replaces is left on the stock path, so there is no case in which turning it off is
+      ! the better default.
       call get_environment_variable('MFC_DACE_FDIFF_SRC', env, status=st)
       if (st == 0 .and. len_trim(env) >= 1) cached_val = env(1:1) /= '0'
       call get_environment_variable('MFC_DACE_FDIFF_SRC_DIRS', env, status=st)
