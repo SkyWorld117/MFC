@@ -734,6 +734,11 @@ module m_dace_kernels_fdiff_src
   end interface
 
   type(c_ptr), save :: x_state = c_null_ptr, y_state = c_null_ptr, z_state = c_null_ptr
+  ! The signature each state was initialised for: every scalar the init received.  Re-init only
+  ! when it changes (or the state is absent), so a run pays __dace_init once per direction.
+  integer(c_int64_t), save :: x_sig(64) = -1_c_int64_t, y_sig(64) = -1_c_int64_t, &
+                            & z_sig(64) = -1_c_int64_t
+  integer(c_int64_t) :: x_sig_new(64), y_sig_new(64), z_sig_new(64)
 
 contains
 
@@ -1002,21 +1007,48 @@ contains
 
     select case (dir_in)
     case (1)   ! x
-      x_state = fdiff_src_init_x(int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
-                                  int(b(5), c_int), int(b(6), c_int), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t))
+      x_sig_new(1:44) = [int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(b(1), c_int), c_int64_t), &
+      int(int(b(2), c_int), c_int64_t), int(int(b(3), c_int), c_int64_t), &
+      int(int(b(4), c_int), c_int64_t), int(int(b(5), c_int), c_int64_t), &
+      int(int(b(6), c_int), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t)]
+      if (.not. c_associated(x_state) .or. any(x_sig(1:44) /= x_sig_new(1:44))) then
+        if (c_associated(x_state)) ierr = fdiff_src_exit_x(x_state)
+        x_sig(1:44) = x_sig_new(1:44)
+        x_state = fdiff_src_init_x(int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
+                                    int(b(5), c_int), int(b(6), c_int), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t))
+      end if
       call fdiff_src_run_x(x_state, &
           & dsp_dev, f1_dev, f2_dev, f3_dev, f4_dev, f5_dev, &
           & f6_dev, f7_dev, f8_dev, fsrc_dev, qa1_dev, qa2_dev, &
@@ -1029,23 +1061,49 @@ contains
           & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
           & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
           & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t))
-      ierr = fdiff_src_exit_x(x_state)
     case (2)   ! y
-      y_state = fdiff_src_init_y(int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
-                                  int(b(5), c_int), int(b(6), c_int), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t))
+      y_sig_new(1:44) = [int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(b(1), c_int), c_int64_t), &
+      int(int(b(2), c_int), c_int64_t), int(int(b(3), c_int), c_int64_t), &
+      int(int(b(4), c_int), c_int64_t), int(int(b(5), c_int), c_int64_t), &
+      int(int(b(6), c_int), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t)]
+      if (.not. c_associated(y_state) .or. any(y_sig(1:44) /= y_sig_new(1:44))) then
+        if (c_associated(y_state)) ierr = fdiff_src_exit_y(y_state)
+        y_sig(1:44) = y_sig_new(1:44)
+        y_state = fdiff_src_init_y(int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
+                                    int(b(5), c_int), int(b(6), c_int), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t))
+      end if
       call fdiff_src_run_y(y_state, &
           & dsp_dev, f1_dev, f2_dev, f3_dev, f4_dev, f5_dev, &
           & f6_dev, f7_dev, f8_dev, fsrc_dev, qa1_dev, qa2_dev, &
@@ -1058,23 +1116,49 @@ contains
           & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
           & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
           & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t))
-      ierr = fdiff_src_exit_y(y_state)
     case (3)   ! z
-      z_state = fdiff_src_init_z(int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
-                                  int(b(5), c_int), int(b(6), c_int), int(ext_f, c_int64_t), &
-                                  int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
-                                  int(ext_r, c_int64_t))
+      z_sig_new(1:44) = [int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(b(1), c_int), c_int64_t), &
+      int(int(b(2), c_int), c_int64_t), int(int(b(3), c_int), c_int64_t), &
+      int(int(b(4), c_int), c_int64_t), int(int(b(5), c_int), c_int64_t), &
+      int(int(b(6), c_int), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_f, c_int64_t), c_int64_t), &
+      int(int(ext_f, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t), int(int(ext_r, c_int64_t), c_int64_t), &
+      int(int(ext_r, c_int64_t), c_int64_t)]
+      if (.not. c_associated(z_state) .or. any(z_sig(1:44) /= z_sig_new(1:44))) then
+        if (c_associated(z_state)) ierr = fdiff_src_exit_z(z_state)
+        z_sig(1:44) = z_sig_new(1:44)
+        z_state = fdiff_src_init_z(int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(b(1), c_int), int(b(2), c_int), int(b(3), c_int), int(b(4), c_int), &
+                                    int(b(5), c_int), int(b(6), c_int), int(ext_f, c_int64_t), &
+                                    int(ext_f, c_int64_t), int(ext_f, c_int64_t), int(ext_f, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
+                                    int(ext_r, c_int64_t))
+      end if
       call fdiff_src_run_z(z_state, &
           & dsp_dev, f1_dev, f2_dev, f3_dev, f4_dev, f5_dev, &
           & f6_dev, f7_dev, f8_dev, fsrc_dev, qa1_dev, qa2_dev, &
@@ -1087,7 +1171,6 @@ contains
           & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
           & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), &
           & int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t), int(ext_r, c_int64_t))
-      ierr = fdiff_src_exit_z(z_state)
     case default
       print *, 'm_dace_kernels_fdiff_src: bad direction', dir_in
       error stop 1
