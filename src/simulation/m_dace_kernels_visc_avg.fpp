@@ -320,9 +320,16 @@ contains
   end subroutine visc_avg_announce
 
   !> The bake's contract: the TUs unroll the three momentum rows and touch no ghost cells.
+  !!
+  !! `viscous` is not redundant with the caller's own guard.  MFC allocates these gradient arrays
+  !! **1x1x1** on the inviscid path (m_rhs.fpp:347), so a dispatch that ever fired there would hand
+  !! the kernel the full-size extents the SHIM computes from `size(...)` for a 1x1x1 array -- an
+  !! out-of-bounds read, not a wrong number.  What stops that today is the guard on the call itself
+  !! (`if (viscous .and. .not. igr)`, m_rhs.fpp:667); stating it here is what stops it after the
+  !! next edit to that call site.
   function visc_avg_contract() result(c)
     logical :: c
-    c = (num_dims == 3 .and. num_vels == 3 .and. .not. cyl_coord)
+    c = (num_dims == 3 .and. num_vels == 3 .and. .not. cyl_coord .and. viscous)
   end function visc_avg_contract
 
   !> The two level-2 x-gradient face averages (both sides of the y-face stencil), one kernel.
