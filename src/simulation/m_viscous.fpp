@@ -452,8 +452,20 @@ contains
                     ! storage subscript -- which is why these two fuse and the other sixteen do not.
                     #if defined(MFC_DACE)
                     if (visc_avg_dir_enabled(1) .and. visc_avg_contract()) then
-                        call s_dace_visc_avg_x(dqL_prim_dx_n(1), dqR_prim_dx_n(1), dqL_prim_dx_n(2), &
-                             & dqR_prim_dx_n(2), iv%beg, iv%end, is1_viscous%beg, is1_viscous%end, &
+                        call s_dace_visc_avg_x(dqL_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dx_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dx_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dx_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dx_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dx_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dx_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & size(dqL_prim_dx_n(1)%vf(iv%beg)%sf, 1), &
+                             & size(dqL_prim_dx_n(1)%vf(iv%beg)%sf, 2), is1_viscous%beg, is1_viscous%end, &
                              & is2_viscous%beg, is2_viscous%end, is3_viscous%beg, is3_viscous%end)
                     else
                     #endif
@@ -600,8 +612,20 @@ contains
                         ! reads is 3 rather than 1 (which the CALLER supplies; the TU is identical).
                         #if defined(MFC_DACE)
                         if (visc_avg_dir_enabled(2) .and. visc_avg_contract()) then
-                            call s_dace_visc_avg_z(dqL_prim_dz_n(3), dqR_prim_dz_n(3), dqL_prim_dz_n(2), &
-                                 & dqR_prim_dz_n(2), iv%beg, iv%end, is1_viscous%beg, is1_viscous%end, &
+                            call s_dace_visc_avg_z(dqL_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                                 & dqL_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                                 & dqL_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                                 & dqR_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                                 & dqR_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                                 & dqR_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                                 & dqL_prim_dz_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                                 & dqL_prim_dz_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                                 & dqL_prim_dz_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                                 & dqR_prim_dz_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                                 & dqR_prim_dz_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                                 & dqR_prim_dz_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                                 & size(dqL_prim_dz_n(3)%vf(iv%beg)%sf, 1), &
+                                 & size(dqL_prim_dz_n(3)%vf(iv%beg)%sf, 2), is1_viscous%beg, is1_viscous%end, &
                                  & is2_viscous%beg, is2_viscous%end, is3_viscous%beg, is3_viscous%end)
                         else
                         #endif

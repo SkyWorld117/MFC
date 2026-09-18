@@ -24,6 +24,18 @@ module m_dace_kernels_visc_avg
       type(c_ptr), value :: hostptr
     end function
 
+    ! Order the DaCe kernel against the OpenACC runtime.  The kernel runs on DaCe's OWN cudaStream,
+    ! and `cudaStreamCreateWithFlags(..., cudaStreamNonBlocking)` means that stream does NOT
+    ! synchronise with the legacy default stream the OpenACC loops use -- so without this the next
+    ! OpenACC loop over the same arrays races the kernel that just wrote them.  The working
+    ! `m_dace_kernels.fpp` shim calls this around its own staging ("sync pack"); the staging variant
+    ! of THIS shim got the ordering for free from its copy-back `!$acc parallel loop`, which is why
+    ! the direct form needed it and the staging form did not.
+    function cudaDeviceSynchronize_() bind(C, name='cudaDeviceSynchronize')
+      import :: c_int
+      integer(c_int) :: cudaDeviceSynchronize_
+    end function
+
     subroutine visc_avg_x_run(state, dxl1, dxl2, dxl3, dxr1, dxr2, dxr3, oxl1, oxl2, oxl3, oxr1, oxr2, oxr3, dxl1_d0, dxl1_d1, dxl2_d0, dxl2_d1, dxl3_d0, dxl3_d1, dxr1_d0, dxr1_d1, dxr2_d0, dxr2_d1, dxr3_d0, dxr3_d1, jhi, jlb, jlo, jre, kxb, kxe, lxb, lxe, oxl1_d0, oxl1_d1, oxl2_d0, oxl2_d1, oxl3_d0, oxl3_d1, oxr1_d0, oxr1_d1, oxr2_d0, oxr2_d1, oxr3_d0, oxr3_d1) &
         bind(C, name='__program_mfc_dace_visc_avg_x')
       import :: c_ptr, c_int, c_int64_t, c_double
@@ -225,18 +237,6 @@ module m_dace_kernels_visc_avg
   type(c_ptr), save :: x_oxr1_dev
   type(c_ptr), save :: x_oxr2_dev
   type(c_ptr), save :: x_oxr3_dev
-  real(c_double), pointer :: x_dxl1_fp(:)
-  real(c_double), pointer :: x_dxl2_fp(:)
-  real(c_double), pointer :: x_dxl3_fp(:)
-  real(c_double), pointer :: x_dxr1_fp(:)
-  real(c_double), pointer :: x_dxr2_fp(:)
-  real(c_double), pointer :: x_dxr3_fp(:)
-  real(c_double), pointer :: x_oxl1_fp(:)
-  real(c_double), pointer :: x_oxl2_fp(:)
-  real(c_double), pointer :: x_oxl3_fp(:)
-  real(c_double), pointer :: x_oxr1_fp(:)
-  real(c_double), pointer :: x_oxr2_fp(:)
-  real(c_double), pointer :: x_oxr3_fp(:)
   type(c_ptr), save :: z_dzl1_dev
   type(c_ptr), save :: z_dzl2_dev
   type(c_ptr), save :: z_dzl3_dev
@@ -249,18 +249,6 @@ module m_dace_kernels_visc_avg
   type(c_ptr), save :: z_ozr1_dev
   type(c_ptr), save :: z_ozr2_dev
   type(c_ptr), save :: z_ozr3_dev
-  real(c_double), pointer :: z_dzl1_fp(:)
-  real(c_double), pointer :: z_dzl2_fp(:)
-  real(c_double), pointer :: z_dzl3_fp(:)
-  real(c_double), pointer :: z_dzr1_fp(:)
-  real(c_double), pointer :: z_dzr2_fp(:)
-  real(c_double), pointer :: z_dzr3_fp(:)
-  real(c_double), pointer :: z_ozl1_fp(:)
-  real(c_double), pointer :: z_ozl2_fp(:)
-  real(c_double), pointer :: z_ozl3_fp(:)
-  real(c_double), pointer :: z_ozr1_fp(:)
-  real(c_double), pointer :: z_ozr2_fp(:)
-  real(c_double), pointer :: z_ozr3_fp(:)
 
 contains
 
@@ -269,7 +257,7 @@ contains
   !! BOTH directions, so a guard written `visc_avg_dir_enabled(n)` alone turns the kernel on by
   !! default -- which is exactly what the first wiring of this dispatch did.
   !!
-  !! `MFC_DACE_VISC_AVG` (unset or 0 = the stock loops, unchanged);
+  !! `MFC_DACE_VISC_AVG` (unset = ON; `=0` runs the stock loops);
   !! `MFC_DACE_VISC_AVG_DIRS` masks a direction (x z; unset = both), for bisecting.
   function visc_avg_dir_enabled(nd) result(c)
     integer, intent(in) :: nd
@@ -277,10 +265,17 @@ contains
     character(len=8) :: env
     integer :: st
     logical, save :: cached = .false.
-    logical, save :: val(2) = [.false., .false.]
+    logical, save :: val(2) = [.true., .true.]
     if (.not. cached) then
+      ! ON BY DEFAULT (2026-09-18).  It was opt-in at 1.11x SLOWER, and that regression was the
+      ! staging: the shim copied every row into a buffer it owned and back out, 2.54 ms of device
+      ! time over 864 launches against 0.38 ms and 72 for the kernels themselves.  With the rows
+      ! handed over directly -- the M3 dummy form plus a device sync, see the module header -- the
+      ! four stock loops it replaces are 0.84 ms of the run's 19.7 ms and the dispatch is FASTER:
+      ! the s_get_viscous family goes 3.784 -> 3.336 ms, 144 launches leave the census, and the
+      ! field tree is bit-identical on every direction mask (104 files).
       call get_environment_variable('MFC_DACE_VISC_AVG', env, status=st)
-      if (st == 0 .and. len_trim(env) >= 1 .and. env(1:1) /= '0') val = .true.
+      if (st == 0 .and. len_trim(env) >= 1) val = env(1:1) /= '0'
       call get_environment_variable('MFC_DACE_VISC_AVG_DIRS', env, status=st)
       if (st == 0 .and. len_trim(env) >= 1) then
         val(1) = val(1) .and. env(1:1) == '1'
@@ -333,469 +328,147 @@ contains
   end function visc_avg_contract
 
   !> The two level-2 x-gradient face averages (both sides of the y-face stencil), one kernel.
-  !! The rows are staged into buffers THIS shim owns with !$acc parallel loops, so the kernel never sees an acc_deviceptr of MFC's arrays.
-  !! Set MFC_DACE_VISC_AVG_STAGE=0 and re-bake to drop the staging.
-  subroutine s_dace_visc_avg_x(vxL, vxR, oxL, oxR, ivb, ive, k1b, k1e, k2b, k2e, k3b, k3e)
-    type(vector_field), intent(in) :: vxL, vxR
-    type(vector_field), intent(inout) :: oxL, oxR
-    integer, intent(in) :: ivb, ive, k1b, k1e, k2b, k2e, k3b, k3e
-    integer :: ierr, kxb, kxe, kzb, kze, lxb, lxe, lzb, lze, jlo, jhi, jlb, jre, b1, b2, b3
-    integer :: ii, jj, kk
+  !! The rows are MFC's own: the caller passes `sf(0:, 0:, 0:)` sections, so the dummy's first
+  !! element is raw index 0 and the ranges below are raw -- negative ones included, which walk into
+  !! the parent's ghost ring by pointer arithmetic exactly as the stock loops do.  No buffers and no
+  !! copies: staging every row in and back out cost 2.54 ms of device time over 864 launches
+  !! against 0.38 ms and 72 for the kernels themselves.
+  subroutine s_dace_visc_avg_x(dxl1, dxl2, dxl3, dxr1, dxr2, dxr3, oxl1, oxl2, oxl3, oxr1, oxr2, oxr3, ext_k, ext_j, k1b, k1e, k2b, k2e, k3b, k3e)
+    real(c_double), dimension(:, :, :), intent(in), target :: dxl1
+    real(c_double), dimension(:, :, :), intent(in), target :: dxl2
+    real(c_double), dimension(:, :, :), intent(in), target :: dxl3
+    real(c_double), dimension(:, :, :), intent(in), target :: dxr1
+    real(c_double), dimension(:, :, :), intent(in), target :: dxr2
+    real(c_double), dimension(:, :, :), intent(in), target :: dxr3
+    real(c_double), dimension(:, :, :), intent(inout), target :: oxl1
+    real(c_double), dimension(:, :, :), intent(inout), target :: oxl2
+    real(c_double), dimension(:, :, :), intent(inout), target :: oxl3
+    real(c_double), dimension(:, :, :), intent(inout), target :: oxr1
+    real(c_double), dimension(:, :, :), intent(inout), target :: oxr2
+    real(c_double), dimension(:, :, :), intent(inout), target :: oxr3
+    integer, intent(in) :: ext_k, ext_j, k1b, k1e, k2b, k2e, k3b, k3e
+    integer :: ierr, kxb, kxe, lxb, lxe, jlo, jhi, jlb, jre
 
     call visc_avg_announce(1)
 
-    b1 = lbound(vxL%vf(ivb)%sf, 1)
-    b2 = lbound(vxL%vf(ivb)%sf, 2)
-    b3 = lbound(vxL%vf(ivb)%sf, 3)
-
-    ! every range is relative to the row's lbound corner, and the extents handed to the kernel are
-    ! the row's full extents -- the two must agree or the stride arithmetic runs past the buffer
-    kxb = k1b + 1 - b1; kxe = k1e - 1 - b1
-    kzb = k1b - b1;     kze = k1e - b1
-    lxb = k3b - b3;     lxe = k3e - b3
-    lzb = k3b + 1 - b3; lze = k3e - 1 - b3
+    kxb = k1b + 1
+    kxe = k1e - 1
+    lxb = k3b
+    lxe = k3e
     ! the two arms share ONE nest, so the kernel takes the UNION of their j ranges (jlo..jhi) plus
-    ! the two guards that select each arm inside it.  The union is contiguous by construction:
-    ! the L arm runs k2b+1..k2e and the R arm k2b..k2e-1.
-    jlo = k2b - b2;     jhi = k2e - b2
-    jlb = k2b + 1 - b2; jre = k2e - 1 - b2
+    ! the two guards that select each arm inside it.  The union is contiguous by construction: the L
+    ! arm runs k2b+1..k2e and the R arm k2b..k2e-1.
+    jlo = k2b;     jhi = k2e
+    jlb = k2b + 1; jre = k2e - 1
 
-      if (.not. c_associated(x_dxl1_dev)) then
-        ierr = cudaMalloc_(x_dxl1_dev, int(8_c_size_t*int(size(vxl%vf(ivb + 0)%sf, 1), c_size_t)* &
-             & int(size(vxl%vf(ivb + 0)%sf, 2), c_size_t)*int(size(vxl%vf(ivb + 0)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(x_dxl1_dev, x_dxl1_fp, [size(vxl%vf(ivb + 0)%sf, 1)*size(vxl%vf(ivb + 0)%sf, 2)*size(vxl%vf(ivb + 0)%sf, 3)])
-      end if
-      !$acc parallel loop collapse(3) deviceptr(x_dxl1_fp)
-      do kk = 1, size(vxl%vf(ivb + 0)%sf, 3)
-        do jj = 1, size(vxl%vf(ivb + 0)%sf, 2)
-          do ii = 1, size(vxl%vf(ivb + 0)%sf, 1)
-            x_dxl1_fp((ii - 1) + size(vxl%vf(ivb + 0)%sf, 1)*((jj - 1) + size(vxl%vf(ivb + 0)%sf, 2)*(kk - 1)) + 1) = vxl%vf(ivb + 0)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      if (.not. c_associated(x_dxl2_dev)) then
-        ierr = cudaMalloc_(x_dxl2_dev, int(8_c_size_t*int(size(vxl%vf(ivb + 1)%sf, 1), c_size_t)* &
-             & int(size(vxl%vf(ivb + 1)%sf, 2), c_size_t)*int(size(vxl%vf(ivb + 1)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(x_dxl2_dev, x_dxl2_fp, [size(vxl%vf(ivb + 1)%sf, 1)*size(vxl%vf(ivb + 1)%sf, 2)*size(vxl%vf(ivb + 1)%sf, 3)])
-      end if
-      !$acc parallel loop collapse(3) deviceptr(x_dxl2_fp)
-      do kk = 1, size(vxl%vf(ivb + 1)%sf, 3)
-        do jj = 1, size(vxl%vf(ivb + 1)%sf, 2)
-          do ii = 1, size(vxl%vf(ivb + 1)%sf, 1)
-            x_dxl2_fp((ii - 1) + size(vxl%vf(ivb + 1)%sf, 1)*((jj - 1) + size(vxl%vf(ivb + 1)%sf, 2)*(kk - 1)) + 1) = vxl%vf(ivb + 1)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      if (.not. c_associated(x_dxl3_dev)) then
-        ierr = cudaMalloc_(x_dxl3_dev, int(8_c_size_t*int(size(vxl%vf(ivb + 2)%sf, 1), c_size_t)* &
-             & int(size(vxl%vf(ivb + 2)%sf, 2), c_size_t)*int(size(vxl%vf(ivb + 2)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(x_dxl3_dev, x_dxl3_fp, [size(vxl%vf(ivb + 2)%sf, 1)*size(vxl%vf(ivb + 2)%sf, 2)*size(vxl%vf(ivb + 2)%sf, 3)])
-      end if
-      !$acc parallel loop collapse(3) deviceptr(x_dxl3_fp)
-      do kk = 1, size(vxl%vf(ivb + 2)%sf, 3)
-        do jj = 1, size(vxl%vf(ivb + 2)%sf, 2)
-          do ii = 1, size(vxl%vf(ivb + 2)%sf, 1)
-            x_dxl3_fp((ii - 1) + size(vxl%vf(ivb + 2)%sf, 1)*((jj - 1) + size(vxl%vf(ivb + 2)%sf, 2)*(kk - 1)) + 1) = vxl%vf(ivb + 2)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      if (.not. c_associated(x_dxr1_dev)) then
-        ierr = cudaMalloc_(x_dxr1_dev, int(8_c_size_t*int(size(vxr%vf(ivb + 0)%sf, 1), c_size_t)* &
-             & int(size(vxr%vf(ivb + 0)%sf, 2), c_size_t)*int(size(vxr%vf(ivb + 0)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(x_dxr1_dev, x_dxr1_fp, [size(vxr%vf(ivb + 0)%sf, 1)*size(vxr%vf(ivb + 0)%sf, 2)*size(vxr%vf(ivb + 0)%sf, 3)])
-      end if
-      !$acc parallel loop collapse(3) deviceptr(x_dxr1_fp)
-      do kk = 1, size(vxr%vf(ivb + 0)%sf, 3)
-        do jj = 1, size(vxr%vf(ivb + 0)%sf, 2)
-          do ii = 1, size(vxr%vf(ivb + 0)%sf, 1)
-            x_dxr1_fp((ii - 1) + size(vxr%vf(ivb + 0)%sf, 1)*((jj - 1) + size(vxr%vf(ivb + 0)%sf, 2)*(kk - 1)) + 1) = vxr%vf(ivb + 0)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      if (.not. c_associated(x_dxr2_dev)) then
-        ierr = cudaMalloc_(x_dxr2_dev, int(8_c_size_t*int(size(vxr%vf(ivb + 1)%sf, 1), c_size_t)* &
-             & int(size(vxr%vf(ivb + 1)%sf, 2), c_size_t)*int(size(vxr%vf(ivb + 1)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(x_dxr2_dev, x_dxr2_fp, [size(vxr%vf(ivb + 1)%sf, 1)*size(vxr%vf(ivb + 1)%sf, 2)*size(vxr%vf(ivb + 1)%sf, 3)])
-      end if
-      !$acc parallel loop collapse(3) deviceptr(x_dxr2_fp)
-      do kk = 1, size(vxr%vf(ivb + 1)%sf, 3)
-        do jj = 1, size(vxr%vf(ivb + 1)%sf, 2)
-          do ii = 1, size(vxr%vf(ivb + 1)%sf, 1)
-            x_dxr2_fp((ii - 1) + size(vxr%vf(ivb + 1)%sf, 1)*((jj - 1) + size(vxr%vf(ivb + 1)%sf, 2)*(kk - 1)) + 1) = vxr%vf(ivb + 1)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      if (.not. c_associated(x_dxr3_dev)) then
-        ierr = cudaMalloc_(x_dxr3_dev, int(8_c_size_t*int(size(vxr%vf(ivb + 2)%sf, 1), c_size_t)* &
-             & int(size(vxr%vf(ivb + 2)%sf, 2), c_size_t)*int(size(vxr%vf(ivb + 2)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(x_dxr3_dev, x_dxr3_fp, [size(vxr%vf(ivb + 2)%sf, 1)*size(vxr%vf(ivb + 2)%sf, 2)*size(vxr%vf(ivb + 2)%sf, 3)])
-      end if
-      !$acc parallel loop collapse(3) deviceptr(x_dxr3_fp)
-      do kk = 1, size(vxr%vf(ivb + 2)%sf, 3)
-        do jj = 1, size(vxr%vf(ivb + 2)%sf, 2)
-          do ii = 1, size(vxr%vf(ivb + 2)%sf, 1)
-            x_dxr3_fp((ii - 1) + size(vxr%vf(ivb + 2)%sf, 1)*((jj - 1) + size(vxr%vf(ivb + 2)%sf, 2)*(kk - 1)) + 1) = vxr%vf(ivb + 2)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      if (.not. c_associated(x_oxl1_dev)) then
-        ierr = cudaMalloc_(x_oxl1_dev, int(8_c_size_t*int(size(oxl%vf(ivb + 0)%sf, 1), c_size_t)* &
-             & int(size(oxl%vf(ivb + 0)%sf, 2), c_size_t)*int(size(oxl%vf(ivb + 0)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(x_oxl1_dev, x_oxl1_fp, [size(oxl%vf(ivb + 0)%sf, 1)*size(oxl%vf(ivb + 0)%sf, 2)*size(oxl%vf(ivb + 0)%sf, 3)])
-      end if
-      if (.not. c_associated(x_oxl2_dev)) then
-        ierr = cudaMalloc_(x_oxl2_dev, int(8_c_size_t*int(size(oxl%vf(ivb + 1)%sf, 1), c_size_t)* &
-             & int(size(oxl%vf(ivb + 1)%sf, 2), c_size_t)*int(size(oxl%vf(ivb + 1)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(x_oxl2_dev, x_oxl2_fp, [size(oxl%vf(ivb + 1)%sf, 1)*size(oxl%vf(ivb + 1)%sf, 2)*size(oxl%vf(ivb + 1)%sf, 3)])
-      end if
-      if (.not. c_associated(x_oxl3_dev)) then
-        ierr = cudaMalloc_(x_oxl3_dev, int(8_c_size_t*int(size(oxl%vf(ivb + 2)%sf, 1), c_size_t)* &
-             & int(size(oxl%vf(ivb + 2)%sf, 2), c_size_t)*int(size(oxl%vf(ivb + 2)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(x_oxl3_dev, x_oxl3_fp, [size(oxl%vf(ivb + 2)%sf, 1)*size(oxl%vf(ivb + 2)%sf, 2)*size(oxl%vf(ivb + 2)%sf, 3)])
-      end if
-      if (.not. c_associated(x_oxr1_dev)) then
-        ierr = cudaMalloc_(x_oxr1_dev, int(8_c_size_t*int(size(oxr%vf(ivb + 0)%sf, 1), c_size_t)* &
-             & int(size(oxr%vf(ivb + 0)%sf, 2), c_size_t)*int(size(oxr%vf(ivb + 0)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(x_oxr1_dev, x_oxr1_fp, [size(oxr%vf(ivb + 0)%sf, 1)*size(oxr%vf(ivb + 0)%sf, 2)*size(oxr%vf(ivb + 0)%sf, 3)])
-      end if
-      if (.not. c_associated(x_oxr2_dev)) then
-        ierr = cudaMalloc_(x_oxr2_dev, int(8_c_size_t*int(size(oxr%vf(ivb + 1)%sf, 1), c_size_t)* &
-             & int(size(oxr%vf(ivb + 1)%sf, 2), c_size_t)*int(size(oxr%vf(ivb + 1)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(x_oxr2_dev, x_oxr2_fp, [size(oxr%vf(ivb + 1)%sf, 1)*size(oxr%vf(ivb + 1)%sf, 2)*size(oxr%vf(ivb + 1)%sf, 3)])
-      end if
-      if (.not. c_associated(x_oxr3_dev)) then
-        ierr = cudaMalloc_(x_oxr3_dev, int(8_c_size_t*int(size(oxr%vf(ivb + 2)%sf, 1), c_size_t)* &
-             & int(size(oxr%vf(ivb + 2)%sf, 2), c_size_t)*int(size(oxr%vf(ivb + 2)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(x_oxr3_dev, x_oxr3_fp, [size(oxr%vf(ivb + 2)%sf, 1)*size(oxr%vf(ivb + 2)%sf, 2)*size(oxr%vf(ivb + 2)%sf, 3)])
-      end if
+    x_dxl1_dev = acc_deviceptr_(c_loc(dxl1(lbound(dxl1, 1), lbound(dxl1, 2), lbound(dxl1, 3))))
+    x_dxl2_dev = acc_deviceptr_(c_loc(dxl2(lbound(dxl2, 1), lbound(dxl2, 2), lbound(dxl2, 3))))
+    x_dxl3_dev = acc_deviceptr_(c_loc(dxl3(lbound(dxl3, 1), lbound(dxl3, 2), lbound(dxl3, 3))))
+    x_dxr1_dev = acc_deviceptr_(c_loc(dxr1(lbound(dxr1, 1), lbound(dxr1, 2), lbound(dxr1, 3))))
+    x_dxr2_dev = acc_deviceptr_(c_loc(dxr2(lbound(dxr2, 1), lbound(dxr2, 2), lbound(dxr2, 3))))
+    x_dxr3_dev = acc_deviceptr_(c_loc(dxr3(lbound(dxr3, 1), lbound(dxr3, 2), lbound(dxr3, 3))))
+    x_oxl1_dev = acc_deviceptr_(c_loc(oxl1(lbound(oxl1, 1), lbound(oxl1, 2), lbound(oxl1, 3))))
+    x_oxl2_dev = acc_deviceptr_(c_loc(oxl2(lbound(oxl2, 1), lbound(oxl2, 2), lbound(oxl2, 3))))
+    x_oxl3_dev = acc_deviceptr_(c_loc(oxl3(lbound(oxl3, 1), lbound(oxl3, 2), lbound(oxl3, 3))))
+    x_oxr1_dev = acc_deviceptr_(c_loc(oxr1(lbound(oxr1, 1), lbound(oxr1, 2), lbound(oxr1, 3))))
+    x_oxr2_dev = acc_deviceptr_(c_loc(oxr2(lbound(oxr2, 1), lbound(oxr2, 2), lbound(oxr2, 3))))
+    x_oxr3_dev = acc_deviceptr_(c_loc(oxr3(lbound(oxr3, 1), lbound(oxr3, 2), lbound(oxr3, 3))))
     if (.not. c_associated(x_state)) then
-      x_state = visc_avg_x_init(int(size(vxl%vf(ivb + 0)%sf, 1), c_int64_t), &
-          & int(size(vxl%vf(ivb + 0)%sf, 2), c_int64_t), int(size(vxl%vf(ivb + 1)%sf, 1), c_int64_t), &
-          & int(size(vxl%vf(ivb + 1)%sf, 2), c_int64_t), int(size(vxl%vf(ivb + 2)%sf, 1), c_int64_t), &
-          & int(size(vxl%vf(ivb + 2)%sf, 2), c_int64_t), int(size(vxr%vf(ivb + 0)%sf, 1), c_int64_t), &
-          & int(size(vxr%vf(ivb + 0)%sf, 2), c_int64_t), int(size(vxr%vf(ivb + 1)%sf, 1), c_int64_t), &
-          & int(size(vxr%vf(ivb + 1)%sf, 2), c_int64_t), int(size(vxr%vf(ivb + 2)%sf, 1), c_int64_t), &
-          & int(size(vxr%vf(ivb + 2)%sf, 2), c_int64_t), int(jhi, c_int), int(jlb, c_int), int(jlo, c_int), &
-          & int(jre, c_int), int(kxb, c_int), int(kxe, c_int), int(lxb, c_int), int(lxe, c_int), &
-          & int(size(oxl%vf(ivb + 0)%sf, 1), c_int64_t), int(size(oxl%vf(ivb + 0)%sf, 2), c_int64_t), &
-          & int(size(oxl%vf(ivb + 1)%sf, 1), c_int64_t), int(size(oxl%vf(ivb + 1)%sf, 2), c_int64_t), &
-          & int(size(oxl%vf(ivb + 2)%sf, 1), c_int64_t), int(size(oxl%vf(ivb + 2)%sf, 2), c_int64_t), &
-          & int(size(oxr%vf(ivb + 0)%sf, 1), c_int64_t), int(size(oxr%vf(ivb + 0)%sf, 2), c_int64_t), &
-          & int(size(oxr%vf(ivb + 1)%sf, 1), c_int64_t), int(size(oxr%vf(ivb + 1)%sf, 2), c_int64_t), &
-          & int(size(oxr%vf(ivb + 2)%sf, 1), c_int64_t), int(size(oxr%vf(ivb + 2)%sf, 2), c_int64_t))
+      x_state = visc_avg_x_init(int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), &
+          & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), &
+          & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), &
+          & int(ext_j, c_int64_t), int(jhi, c_int), int(jlb, c_int), int(jlo, c_int), int(jre, c_int), &
+          & int(kxb, c_int), int(kxe, c_int), int(lxb, c_int), int(lxe, c_int), int(ext_k, c_int64_t), &
+          & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), &
+          & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), &
+          & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t))
     end if
     call visc_avg_x_run(x_state, x_dxl1_dev, x_dxl2_dev, x_dxl3_dev, x_dxr1_dev, x_dxr2_dev, x_dxr3_dev, &
-        & x_oxl1_dev, x_oxl2_dev, x_oxl3_dev, x_oxr1_dev, x_oxr2_dev, x_oxr3_dev, &
-        & int(size(vxl%vf(ivb + 0)%sf, 1), c_int64_t), int(size(vxl%vf(ivb + 0)%sf, 2), c_int64_t), &
-        & int(size(vxl%vf(ivb + 1)%sf, 1), c_int64_t), int(size(vxl%vf(ivb + 1)%sf, 2), c_int64_t), &
-        & int(size(vxl%vf(ivb + 2)%sf, 1), c_int64_t), int(size(vxl%vf(ivb + 2)%sf, 2), c_int64_t), &
-        & int(size(vxr%vf(ivb + 0)%sf, 1), c_int64_t), int(size(vxr%vf(ivb + 0)%sf, 2), c_int64_t), &
-        & int(size(vxr%vf(ivb + 1)%sf, 1), c_int64_t), int(size(vxr%vf(ivb + 1)%sf, 2), c_int64_t), &
-        & int(size(vxr%vf(ivb + 2)%sf, 1), c_int64_t), int(size(vxr%vf(ivb + 2)%sf, 2), c_int64_t), &
-        & int(jhi, c_int), int(jlb, c_int), int(jlo, c_int), int(jre, c_int), int(kxb, c_int), &
-        & int(kxe, c_int), int(lxb, c_int), int(lxe, c_int), int(size(oxl%vf(ivb + 0)%sf, 1), c_int64_t), &
-        & int(size(oxl%vf(ivb + 0)%sf, 2), c_int64_t), int(size(oxl%vf(ivb + 1)%sf, 1), c_int64_t), &
-        & int(size(oxl%vf(ivb + 1)%sf, 2), c_int64_t), int(size(oxl%vf(ivb + 2)%sf, 1), c_int64_t), &
-        & int(size(oxl%vf(ivb + 2)%sf, 2), c_int64_t), int(size(oxr%vf(ivb + 0)%sf, 1), c_int64_t), &
-        & int(size(oxr%vf(ivb + 0)%sf, 2), c_int64_t), int(size(oxr%vf(ivb + 1)%sf, 1), c_int64_t), &
-        & int(size(oxr%vf(ivb + 1)%sf, 2), c_int64_t), int(size(oxr%vf(ivb + 2)%sf, 1), c_int64_t), &
-        & int(size(oxr%vf(ivb + 2)%sf, 2), c_int64_t))
-      !$acc parallel loop collapse(3) deviceptr(x_oxl1_fp)
-      do kk = 1, size(oxl%vf(ivb + 0)%sf, 3)
-        do jj = 1, size(oxl%vf(ivb + 0)%sf, 2)
-          do ii = 1, size(oxl%vf(ivb + 0)%sf, 1)
-            oxl%vf(ivb + 0)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1) = x_oxl1_fp((ii - 1) + size(oxl%vf(ivb + 0)%sf, 1)*((jj - 1) + size(oxl%vf(ivb + 0)%sf, 2)*(kk - 1)) + 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      !$acc parallel loop collapse(3) deviceptr(x_oxl2_fp)
-      do kk = 1, size(oxl%vf(ivb + 1)%sf, 3)
-        do jj = 1, size(oxl%vf(ivb + 1)%sf, 2)
-          do ii = 1, size(oxl%vf(ivb + 1)%sf, 1)
-            oxl%vf(ivb + 1)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1) = x_oxl2_fp((ii - 1) + size(oxl%vf(ivb + 1)%sf, 1)*((jj - 1) + size(oxl%vf(ivb + 1)%sf, 2)*(kk - 1)) + 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      !$acc parallel loop collapse(3) deviceptr(x_oxl3_fp)
-      do kk = 1, size(oxl%vf(ivb + 2)%sf, 3)
-        do jj = 1, size(oxl%vf(ivb + 2)%sf, 2)
-          do ii = 1, size(oxl%vf(ivb + 2)%sf, 1)
-            oxl%vf(ivb + 2)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1) = x_oxl3_fp((ii - 1) + size(oxl%vf(ivb + 2)%sf, 1)*((jj - 1) + size(oxl%vf(ivb + 2)%sf, 2)*(kk - 1)) + 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      !$acc parallel loop collapse(3) deviceptr(x_oxr1_fp)
-      do kk = 1, size(oxr%vf(ivb + 0)%sf, 3)
-        do jj = 1, size(oxr%vf(ivb + 0)%sf, 2)
-          do ii = 1, size(oxr%vf(ivb + 0)%sf, 1)
-            oxr%vf(ivb + 0)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1) = x_oxr1_fp((ii - 1) + size(oxr%vf(ivb + 0)%sf, 1)*((jj - 1) + size(oxr%vf(ivb + 0)%sf, 2)*(kk - 1)) + 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      !$acc parallel loop collapse(3) deviceptr(x_oxr2_fp)
-      do kk = 1, size(oxr%vf(ivb + 1)%sf, 3)
-        do jj = 1, size(oxr%vf(ivb + 1)%sf, 2)
-          do ii = 1, size(oxr%vf(ivb + 1)%sf, 1)
-            oxr%vf(ivb + 1)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1) = x_oxr2_fp((ii - 1) + size(oxr%vf(ivb + 1)%sf, 1)*((jj - 1) + size(oxr%vf(ivb + 1)%sf, 2)*(kk - 1)) + 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      !$acc parallel loop collapse(3) deviceptr(x_oxr3_fp)
-      do kk = 1, size(oxr%vf(ivb + 2)%sf, 3)
-        do jj = 1, size(oxr%vf(ivb + 2)%sf, 2)
-          do ii = 1, size(oxr%vf(ivb + 2)%sf, 1)
-            oxr%vf(ivb + 2)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1) = x_oxr3_fp((ii - 1) + size(oxr%vf(ivb + 2)%sf, 1)*((jj - 1) + size(oxr%vf(ivb + 2)%sf, 2)*(kk - 1)) + 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
+        & x_oxl1_dev, x_oxl2_dev, x_oxl3_dev, x_oxr1_dev, x_oxr2_dev, x_oxr3_dev, int(ext_k, c_int64_t), &
+        & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), &
+        & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), &
+        & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(jhi, c_int), &
+        & int(jlb, c_int), int(jlo, c_int), int(jre, c_int), int(kxb, c_int), int(kxe, c_int), &
+        & int(lxb, c_int), int(lxe, c_int), int(ext_k, c_int64_t), int(ext_j, c_int64_t), &
+        & int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), &
+        & int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), &
+        & int(ext_k, c_int64_t), int(ext_j, c_int64_t))
+    ierr = cudaDeviceSynchronize_()
     if (ierr /= 0) then
-      print *, 'm_dace_kernels_visc_avg: x: a staging copy failed'
+      print *, 'm_dace_kernels_visc_avg: x: a device pointer did not resolve, or the kernel faulted'
       error stop 1
     end if
   end subroutine s_dace_visc_avg_x
 
   !> The two level-2 z-gradient face averages (both sides of the y-face stencil), one kernel.
-  !! The rows are staged into buffers THIS shim owns with !$acc parallel loops, so the kernel never sees an acc_deviceptr of MFC's arrays.
-  !! Set MFC_DACE_VISC_AVG_STAGE=0 and re-bake to drop the staging.
-  subroutine s_dace_visc_avg_z(vzL, vzR, ozL, ozR, ivb, ive, k1b, k1e, k2b, k2e, k3b, k3e)
-    type(vector_field), intent(in) :: vzL, vzR
-    type(vector_field), intent(inout) :: ozL, ozR
-    integer, intent(in) :: ivb, ive, k1b, k1e, k2b, k2e, k3b, k3e
-    integer :: ierr, kxb, kxe, kzb, kze, lxb, lxe, lzb, lze, jlo, jhi, jlb, jre, b1, b2, b3
-    integer :: ii, jj, kk
+  !! The rows are MFC's own: the caller passes `sf(0:, 0:, 0:)` sections, so the dummy's first
+  !! element is raw index 0 and the ranges below are raw -- negative ones included, which walk into
+  !! the parent's ghost ring by pointer arithmetic exactly as the stock loops do.  No buffers and no
+  !! copies: staging every row in and back out cost 2.54 ms of device time over 864 launches
+  !! against 0.38 ms and 72 for the kernels themselves.
+  subroutine s_dace_visc_avg_z(dzl1, dzl2, dzl3, dzr1, dzr2, dzr3, ozl1, ozl2, ozl3, ozr1, ozr2, ozr3, ext_k, ext_j, k1b, k1e, k2b, k2e, k3b, k3e)
+    real(c_double), dimension(:, :, :), intent(in), target :: dzl1
+    real(c_double), dimension(:, :, :), intent(in), target :: dzl2
+    real(c_double), dimension(:, :, :), intent(in), target :: dzl3
+    real(c_double), dimension(:, :, :), intent(in), target :: dzr1
+    real(c_double), dimension(:, :, :), intent(in), target :: dzr2
+    real(c_double), dimension(:, :, :), intent(in), target :: dzr3
+    real(c_double), dimension(:, :, :), intent(inout), target :: ozl1
+    real(c_double), dimension(:, :, :), intent(inout), target :: ozl2
+    real(c_double), dimension(:, :, :), intent(inout), target :: ozl3
+    real(c_double), dimension(:, :, :), intent(inout), target :: ozr1
+    real(c_double), dimension(:, :, :), intent(inout), target :: ozr2
+    real(c_double), dimension(:, :, :), intent(inout), target :: ozr3
+    integer, intent(in) :: ext_k, ext_j, k1b, k1e, k2b, k2e, k3b, k3e
+    integer :: ierr, kzb, kze, lzb, lze, jlo, jhi, jlb, jre
 
     call visc_avg_announce(2)
 
-    b1 = lbound(vzL%vf(ivb)%sf, 1)
-    b2 = lbound(vzL%vf(ivb)%sf, 2)
-    b3 = lbound(vzL%vf(ivb)%sf, 3)
-
-    ! every range is relative to the row's lbound corner, and the extents handed to the kernel are
-    ! the row's full extents -- the two must agree or the stride arithmetic runs past the buffer
-    kxb = k1b + 1 - b1; kxe = k1e - 1 - b1
-    kzb = k1b - b1;     kze = k1e - b1
-    lxb = k3b - b3;     lxe = k3e - b3
-    lzb = k3b + 1 - b3; lze = k3e - 1 - b3
+    kzb = k1b
+    kze = k1e
+    lzb = k3b + 1
+    lze = k3e - 1
     ! the two arms share ONE nest, so the kernel takes the UNION of their j ranges (jlo..jhi) plus
-    ! the two guards that select each arm inside it.  The union is contiguous by construction:
-    ! the L arm runs k2b+1..k2e and the R arm k2b..k2e-1.
-    jlo = k2b - b2;     jhi = k2e - b2
-    jlb = k2b + 1 - b2; jre = k2e - 1 - b2
+    ! the two guards that select each arm inside it.  The union is contiguous by construction: the L
+    ! arm runs k2b+1..k2e and the R arm k2b..k2e-1.
+    jlo = k2b;     jhi = k2e
+    jlb = k2b + 1; jre = k2e - 1
 
-      if (.not. c_associated(z_dzl1_dev)) then
-        ierr = cudaMalloc_(z_dzl1_dev, int(8_c_size_t*int(size(vzl%vf(ivb + 0)%sf, 1), c_size_t)* &
-             & int(size(vzl%vf(ivb + 0)%sf, 2), c_size_t)*int(size(vzl%vf(ivb + 0)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(z_dzl1_dev, z_dzl1_fp, [size(vzl%vf(ivb + 0)%sf, 1)*size(vzl%vf(ivb + 0)%sf, 2)*size(vzl%vf(ivb + 0)%sf, 3)])
-      end if
-      !$acc parallel loop collapse(3) deviceptr(z_dzl1_fp)
-      do kk = 1, size(vzl%vf(ivb + 0)%sf, 3)
-        do jj = 1, size(vzl%vf(ivb + 0)%sf, 2)
-          do ii = 1, size(vzl%vf(ivb + 0)%sf, 1)
-            z_dzl1_fp((ii - 1) + size(vzl%vf(ivb + 0)%sf, 1)*((jj - 1) + size(vzl%vf(ivb + 0)%sf, 2)*(kk - 1)) + 1) = vzl%vf(ivb + 0)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      if (.not. c_associated(z_dzl2_dev)) then
-        ierr = cudaMalloc_(z_dzl2_dev, int(8_c_size_t*int(size(vzl%vf(ivb + 1)%sf, 1), c_size_t)* &
-             & int(size(vzl%vf(ivb + 1)%sf, 2), c_size_t)*int(size(vzl%vf(ivb + 1)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(z_dzl2_dev, z_dzl2_fp, [size(vzl%vf(ivb + 1)%sf, 1)*size(vzl%vf(ivb + 1)%sf, 2)*size(vzl%vf(ivb + 1)%sf, 3)])
-      end if
-      !$acc parallel loop collapse(3) deviceptr(z_dzl2_fp)
-      do kk = 1, size(vzl%vf(ivb + 1)%sf, 3)
-        do jj = 1, size(vzl%vf(ivb + 1)%sf, 2)
-          do ii = 1, size(vzl%vf(ivb + 1)%sf, 1)
-            z_dzl2_fp((ii - 1) + size(vzl%vf(ivb + 1)%sf, 1)*((jj - 1) + size(vzl%vf(ivb + 1)%sf, 2)*(kk - 1)) + 1) = vzl%vf(ivb + 1)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      if (.not. c_associated(z_dzl3_dev)) then
-        ierr = cudaMalloc_(z_dzl3_dev, int(8_c_size_t*int(size(vzl%vf(ivb + 2)%sf, 1), c_size_t)* &
-             & int(size(vzl%vf(ivb + 2)%sf, 2), c_size_t)*int(size(vzl%vf(ivb + 2)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(z_dzl3_dev, z_dzl3_fp, [size(vzl%vf(ivb + 2)%sf, 1)*size(vzl%vf(ivb + 2)%sf, 2)*size(vzl%vf(ivb + 2)%sf, 3)])
-      end if
-      !$acc parallel loop collapse(3) deviceptr(z_dzl3_fp)
-      do kk = 1, size(vzl%vf(ivb + 2)%sf, 3)
-        do jj = 1, size(vzl%vf(ivb + 2)%sf, 2)
-          do ii = 1, size(vzl%vf(ivb + 2)%sf, 1)
-            z_dzl3_fp((ii - 1) + size(vzl%vf(ivb + 2)%sf, 1)*((jj - 1) + size(vzl%vf(ivb + 2)%sf, 2)*(kk - 1)) + 1) = vzl%vf(ivb + 2)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      if (.not. c_associated(z_dzr1_dev)) then
-        ierr = cudaMalloc_(z_dzr1_dev, int(8_c_size_t*int(size(vzr%vf(ivb + 0)%sf, 1), c_size_t)* &
-             & int(size(vzr%vf(ivb + 0)%sf, 2), c_size_t)*int(size(vzr%vf(ivb + 0)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(z_dzr1_dev, z_dzr1_fp, [size(vzr%vf(ivb + 0)%sf, 1)*size(vzr%vf(ivb + 0)%sf, 2)*size(vzr%vf(ivb + 0)%sf, 3)])
-      end if
-      !$acc parallel loop collapse(3) deviceptr(z_dzr1_fp)
-      do kk = 1, size(vzr%vf(ivb + 0)%sf, 3)
-        do jj = 1, size(vzr%vf(ivb + 0)%sf, 2)
-          do ii = 1, size(vzr%vf(ivb + 0)%sf, 1)
-            z_dzr1_fp((ii - 1) + size(vzr%vf(ivb + 0)%sf, 1)*((jj - 1) + size(vzr%vf(ivb + 0)%sf, 2)*(kk - 1)) + 1) = vzr%vf(ivb + 0)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      if (.not. c_associated(z_dzr2_dev)) then
-        ierr = cudaMalloc_(z_dzr2_dev, int(8_c_size_t*int(size(vzr%vf(ivb + 1)%sf, 1), c_size_t)* &
-             & int(size(vzr%vf(ivb + 1)%sf, 2), c_size_t)*int(size(vzr%vf(ivb + 1)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(z_dzr2_dev, z_dzr2_fp, [size(vzr%vf(ivb + 1)%sf, 1)*size(vzr%vf(ivb + 1)%sf, 2)*size(vzr%vf(ivb + 1)%sf, 3)])
-      end if
-      !$acc parallel loop collapse(3) deviceptr(z_dzr2_fp)
-      do kk = 1, size(vzr%vf(ivb + 1)%sf, 3)
-        do jj = 1, size(vzr%vf(ivb + 1)%sf, 2)
-          do ii = 1, size(vzr%vf(ivb + 1)%sf, 1)
-            z_dzr2_fp((ii - 1) + size(vzr%vf(ivb + 1)%sf, 1)*((jj - 1) + size(vzr%vf(ivb + 1)%sf, 2)*(kk - 1)) + 1) = vzr%vf(ivb + 1)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      if (.not. c_associated(z_dzr3_dev)) then
-        ierr = cudaMalloc_(z_dzr3_dev, int(8_c_size_t*int(size(vzr%vf(ivb + 2)%sf, 1), c_size_t)* &
-             & int(size(vzr%vf(ivb + 2)%sf, 2), c_size_t)*int(size(vzr%vf(ivb + 2)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(z_dzr3_dev, z_dzr3_fp, [size(vzr%vf(ivb + 2)%sf, 1)*size(vzr%vf(ivb + 2)%sf, 2)*size(vzr%vf(ivb + 2)%sf, 3)])
-      end if
-      !$acc parallel loop collapse(3) deviceptr(z_dzr3_fp)
-      do kk = 1, size(vzr%vf(ivb + 2)%sf, 3)
-        do jj = 1, size(vzr%vf(ivb + 2)%sf, 2)
-          do ii = 1, size(vzr%vf(ivb + 2)%sf, 1)
-            z_dzr3_fp((ii - 1) + size(vzr%vf(ivb + 2)%sf, 1)*((jj - 1) + size(vzr%vf(ivb + 2)%sf, 2)*(kk - 1)) + 1) = vzr%vf(ivb + 2)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      if (.not. c_associated(z_ozl1_dev)) then
-        ierr = cudaMalloc_(z_ozl1_dev, int(8_c_size_t*int(size(ozl%vf(ivb + 0)%sf, 1), c_size_t)* &
-             & int(size(ozl%vf(ivb + 0)%sf, 2), c_size_t)*int(size(ozl%vf(ivb + 0)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(z_ozl1_dev, z_ozl1_fp, [size(ozl%vf(ivb + 0)%sf, 1)*size(ozl%vf(ivb + 0)%sf, 2)*size(ozl%vf(ivb + 0)%sf, 3)])
-      end if
-      if (.not. c_associated(z_ozl2_dev)) then
-        ierr = cudaMalloc_(z_ozl2_dev, int(8_c_size_t*int(size(ozl%vf(ivb + 1)%sf, 1), c_size_t)* &
-             & int(size(ozl%vf(ivb + 1)%sf, 2), c_size_t)*int(size(ozl%vf(ivb + 1)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(z_ozl2_dev, z_ozl2_fp, [size(ozl%vf(ivb + 1)%sf, 1)*size(ozl%vf(ivb + 1)%sf, 2)*size(ozl%vf(ivb + 1)%sf, 3)])
-      end if
-      if (.not. c_associated(z_ozl3_dev)) then
-        ierr = cudaMalloc_(z_ozl3_dev, int(8_c_size_t*int(size(ozl%vf(ivb + 2)%sf, 1), c_size_t)* &
-             & int(size(ozl%vf(ivb + 2)%sf, 2), c_size_t)*int(size(ozl%vf(ivb + 2)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(z_ozl3_dev, z_ozl3_fp, [size(ozl%vf(ivb + 2)%sf, 1)*size(ozl%vf(ivb + 2)%sf, 2)*size(ozl%vf(ivb + 2)%sf, 3)])
-      end if
-      if (.not. c_associated(z_ozr1_dev)) then
-        ierr = cudaMalloc_(z_ozr1_dev, int(8_c_size_t*int(size(ozr%vf(ivb + 0)%sf, 1), c_size_t)* &
-             & int(size(ozr%vf(ivb + 0)%sf, 2), c_size_t)*int(size(ozr%vf(ivb + 0)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(z_ozr1_dev, z_ozr1_fp, [size(ozr%vf(ivb + 0)%sf, 1)*size(ozr%vf(ivb + 0)%sf, 2)*size(ozr%vf(ivb + 0)%sf, 3)])
-      end if
-      if (.not. c_associated(z_ozr2_dev)) then
-        ierr = cudaMalloc_(z_ozr2_dev, int(8_c_size_t*int(size(ozr%vf(ivb + 1)%sf, 1), c_size_t)* &
-             & int(size(ozr%vf(ivb + 1)%sf, 2), c_size_t)*int(size(ozr%vf(ivb + 1)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(z_ozr2_dev, z_ozr2_fp, [size(ozr%vf(ivb + 1)%sf, 1)*size(ozr%vf(ivb + 1)%sf, 2)*size(ozr%vf(ivb + 1)%sf, 3)])
-      end if
-      if (.not. c_associated(z_ozr3_dev)) then
-        ierr = cudaMalloc_(z_ozr3_dev, int(8_c_size_t*int(size(ozr%vf(ivb + 2)%sf, 1), c_size_t)* &
-             & int(size(ozr%vf(ivb + 2)%sf, 2), c_size_t)*int(size(ozr%vf(ivb + 2)%sf, 3), c_size_t), c_size_t))
-        call c_f_pointer(z_ozr3_dev, z_ozr3_fp, [size(ozr%vf(ivb + 2)%sf, 1)*size(ozr%vf(ivb + 2)%sf, 2)*size(ozr%vf(ivb + 2)%sf, 3)])
-      end if
+    z_dzl1_dev = acc_deviceptr_(c_loc(dzl1(lbound(dzl1, 1), lbound(dzl1, 2), lbound(dzl1, 3))))
+    z_dzl2_dev = acc_deviceptr_(c_loc(dzl2(lbound(dzl2, 1), lbound(dzl2, 2), lbound(dzl2, 3))))
+    z_dzl3_dev = acc_deviceptr_(c_loc(dzl3(lbound(dzl3, 1), lbound(dzl3, 2), lbound(dzl3, 3))))
+    z_dzr1_dev = acc_deviceptr_(c_loc(dzr1(lbound(dzr1, 1), lbound(dzr1, 2), lbound(dzr1, 3))))
+    z_dzr2_dev = acc_deviceptr_(c_loc(dzr2(lbound(dzr2, 1), lbound(dzr2, 2), lbound(dzr2, 3))))
+    z_dzr3_dev = acc_deviceptr_(c_loc(dzr3(lbound(dzr3, 1), lbound(dzr3, 2), lbound(dzr3, 3))))
+    z_ozl1_dev = acc_deviceptr_(c_loc(ozl1(lbound(ozl1, 1), lbound(ozl1, 2), lbound(ozl1, 3))))
+    z_ozl2_dev = acc_deviceptr_(c_loc(ozl2(lbound(ozl2, 1), lbound(ozl2, 2), lbound(ozl2, 3))))
+    z_ozl3_dev = acc_deviceptr_(c_loc(ozl3(lbound(ozl3, 1), lbound(ozl3, 2), lbound(ozl3, 3))))
+    z_ozr1_dev = acc_deviceptr_(c_loc(ozr1(lbound(ozr1, 1), lbound(ozr1, 2), lbound(ozr1, 3))))
+    z_ozr2_dev = acc_deviceptr_(c_loc(ozr2(lbound(ozr2, 1), lbound(ozr2, 2), lbound(ozr2, 3))))
+    z_ozr3_dev = acc_deviceptr_(c_loc(ozr3(lbound(ozr3, 1), lbound(ozr3, 2), lbound(ozr3, 3))))
     if (.not. c_associated(z_state)) then
-      z_state = visc_avg_z_init(int(size(vzl%vf(ivb + 0)%sf, 1), c_int64_t), &
-          & int(size(vzl%vf(ivb + 0)%sf, 2), c_int64_t), int(size(vzl%vf(ivb + 1)%sf, 1), c_int64_t), &
-          & int(size(vzl%vf(ivb + 1)%sf, 2), c_int64_t), int(size(vzl%vf(ivb + 2)%sf, 1), c_int64_t), &
-          & int(size(vzl%vf(ivb + 2)%sf, 2), c_int64_t), int(size(vzr%vf(ivb + 0)%sf, 1), c_int64_t), &
-          & int(size(vzr%vf(ivb + 0)%sf, 2), c_int64_t), int(size(vzr%vf(ivb + 1)%sf, 1), c_int64_t), &
-          & int(size(vzr%vf(ivb + 1)%sf, 2), c_int64_t), int(size(vzr%vf(ivb + 2)%sf, 1), c_int64_t), &
-          & int(size(vzr%vf(ivb + 2)%sf, 2), c_int64_t), int(jhi, c_int), int(jlb, c_int), int(jlo, c_int), &
-          & int(jre, c_int), int(kzb, c_int), int(kze, c_int), int(lzb, c_int), int(lze, c_int), &
-          & int(size(ozl%vf(ivb + 0)%sf, 1), c_int64_t), int(size(ozl%vf(ivb + 0)%sf, 2), c_int64_t), &
-          & int(size(ozl%vf(ivb + 1)%sf, 1), c_int64_t), int(size(ozl%vf(ivb + 1)%sf, 2), c_int64_t), &
-          & int(size(ozl%vf(ivb + 2)%sf, 1), c_int64_t), int(size(ozl%vf(ivb + 2)%sf, 2), c_int64_t), &
-          & int(size(ozr%vf(ivb + 0)%sf, 1), c_int64_t), int(size(ozr%vf(ivb + 0)%sf, 2), c_int64_t), &
-          & int(size(ozr%vf(ivb + 1)%sf, 1), c_int64_t), int(size(ozr%vf(ivb + 1)%sf, 2), c_int64_t), &
-          & int(size(ozr%vf(ivb + 2)%sf, 1), c_int64_t), int(size(ozr%vf(ivb + 2)%sf, 2), c_int64_t))
+      z_state = visc_avg_z_init(int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), &
+          & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), &
+          & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), &
+          & int(ext_j, c_int64_t), int(jhi, c_int), int(jlb, c_int), int(jlo, c_int), int(jre, c_int), &
+          & int(kzb, c_int), int(kze, c_int), int(lzb, c_int), int(lze, c_int), int(ext_k, c_int64_t), &
+          & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), &
+          & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), &
+          & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t))
     end if
     call visc_avg_z_run(z_state, z_dzl1_dev, z_dzl2_dev, z_dzl3_dev, z_dzr1_dev, z_dzr2_dev, z_dzr3_dev, &
-        & z_ozl1_dev, z_ozl2_dev, z_ozl3_dev, z_ozr1_dev, z_ozr2_dev, z_ozr3_dev, &
-        & int(size(vzl%vf(ivb + 0)%sf, 1), c_int64_t), int(size(vzl%vf(ivb + 0)%sf, 2), c_int64_t), &
-        & int(size(vzl%vf(ivb + 1)%sf, 1), c_int64_t), int(size(vzl%vf(ivb + 1)%sf, 2), c_int64_t), &
-        & int(size(vzl%vf(ivb + 2)%sf, 1), c_int64_t), int(size(vzl%vf(ivb + 2)%sf, 2), c_int64_t), &
-        & int(size(vzr%vf(ivb + 0)%sf, 1), c_int64_t), int(size(vzr%vf(ivb + 0)%sf, 2), c_int64_t), &
-        & int(size(vzr%vf(ivb + 1)%sf, 1), c_int64_t), int(size(vzr%vf(ivb + 1)%sf, 2), c_int64_t), &
-        & int(size(vzr%vf(ivb + 2)%sf, 1), c_int64_t), int(size(vzr%vf(ivb + 2)%sf, 2), c_int64_t), &
-        & int(jhi, c_int), int(jlb, c_int), int(jlo, c_int), int(jre, c_int), int(kzb, c_int), &
-        & int(kze, c_int), int(lzb, c_int), int(lze, c_int), int(size(ozl%vf(ivb + 0)%sf, 1), c_int64_t), &
-        & int(size(ozl%vf(ivb + 0)%sf, 2), c_int64_t), int(size(ozl%vf(ivb + 1)%sf, 1), c_int64_t), &
-        & int(size(ozl%vf(ivb + 1)%sf, 2), c_int64_t), int(size(ozl%vf(ivb + 2)%sf, 1), c_int64_t), &
-        & int(size(ozl%vf(ivb + 2)%sf, 2), c_int64_t), int(size(ozr%vf(ivb + 0)%sf, 1), c_int64_t), &
-        & int(size(ozr%vf(ivb + 0)%sf, 2), c_int64_t), int(size(ozr%vf(ivb + 1)%sf, 1), c_int64_t), &
-        & int(size(ozr%vf(ivb + 1)%sf, 2), c_int64_t), int(size(ozr%vf(ivb + 2)%sf, 1), c_int64_t), &
-        & int(size(ozr%vf(ivb + 2)%sf, 2), c_int64_t))
-      !$acc parallel loop collapse(3) deviceptr(z_ozl1_fp)
-      do kk = 1, size(ozl%vf(ivb + 0)%sf, 3)
-        do jj = 1, size(ozl%vf(ivb + 0)%sf, 2)
-          do ii = 1, size(ozl%vf(ivb + 0)%sf, 1)
-            ozl%vf(ivb + 0)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1) = z_ozl1_fp((ii - 1) + size(ozl%vf(ivb + 0)%sf, 1)*((jj - 1) + size(ozl%vf(ivb + 0)%sf, 2)*(kk - 1)) + 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      !$acc parallel loop collapse(3) deviceptr(z_ozl2_fp)
-      do kk = 1, size(ozl%vf(ivb + 1)%sf, 3)
-        do jj = 1, size(ozl%vf(ivb + 1)%sf, 2)
-          do ii = 1, size(ozl%vf(ivb + 1)%sf, 1)
-            ozl%vf(ivb + 1)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1) = z_ozl2_fp((ii - 1) + size(ozl%vf(ivb + 1)%sf, 1)*((jj - 1) + size(ozl%vf(ivb + 1)%sf, 2)*(kk - 1)) + 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      !$acc parallel loop collapse(3) deviceptr(z_ozl3_fp)
-      do kk = 1, size(ozl%vf(ivb + 2)%sf, 3)
-        do jj = 1, size(ozl%vf(ivb + 2)%sf, 2)
-          do ii = 1, size(ozl%vf(ivb + 2)%sf, 1)
-            ozl%vf(ivb + 2)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1) = z_ozl3_fp((ii - 1) + size(ozl%vf(ivb + 2)%sf, 1)*((jj - 1) + size(ozl%vf(ivb + 2)%sf, 2)*(kk - 1)) + 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      !$acc parallel loop collapse(3) deviceptr(z_ozr1_fp)
-      do kk = 1, size(ozr%vf(ivb + 0)%sf, 3)
-        do jj = 1, size(ozr%vf(ivb + 0)%sf, 2)
-          do ii = 1, size(ozr%vf(ivb + 0)%sf, 1)
-            ozr%vf(ivb + 0)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1) = z_ozr1_fp((ii - 1) + size(ozr%vf(ivb + 0)%sf, 1)*((jj - 1) + size(ozr%vf(ivb + 0)%sf, 2)*(kk - 1)) + 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      !$acc parallel loop collapse(3) deviceptr(z_ozr2_fp)
-      do kk = 1, size(ozr%vf(ivb + 1)%sf, 3)
-        do jj = 1, size(ozr%vf(ivb + 1)%sf, 2)
-          do ii = 1, size(ozr%vf(ivb + 1)%sf, 1)
-            ozr%vf(ivb + 1)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1) = z_ozr2_fp((ii - 1) + size(ozr%vf(ivb + 1)%sf, 1)*((jj - 1) + size(ozr%vf(ivb + 1)%sf, 2)*(kk - 1)) + 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
-      !$acc parallel loop collapse(3) deviceptr(z_ozr3_fp)
-      do kk = 1, size(ozr%vf(ivb + 2)%sf, 3)
-        do jj = 1, size(ozr%vf(ivb + 2)%sf, 2)
-          do ii = 1, size(ozr%vf(ivb + 2)%sf, 1)
-            ozr%vf(ivb + 2)%sf(b1 + ii - 1, b2 + jj - 1, b3 + kk - 1) = z_ozr3_fp((ii - 1) + size(ozr%vf(ivb + 2)%sf, 1)*((jj - 1) + size(ozr%vf(ivb + 2)%sf, 2)*(kk - 1)) + 1)
-          end do
-        end do
-      end do
-      !$acc end parallel loop
+        & z_ozl1_dev, z_ozl2_dev, z_ozl3_dev, z_ozr1_dev, z_ozr2_dev, z_ozr3_dev, int(ext_k, c_int64_t), &
+        & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), &
+        & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), &
+        & int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(jhi, c_int), &
+        & int(jlb, c_int), int(jlo, c_int), int(jre, c_int), int(kzb, c_int), int(kze, c_int), &
+        & int(lzb, c_int), int(lze, c_int), int(ext_k, c_int64_t), int(ext_j, c_int64_t), &
+        & int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), &
+        & int(ext_k, c_int64_t), int(ext_j, c_int64_t), int(ext_k, c_int64_t), int(ext_j, c_int64_t), &
+        & int(ext_k, c_int64_t), int(ext_j, c_int64_t))
+    ierr = cudaDeviceSynchronize_()
     if (ierr /= 0) then
-      print *, 'm_dace_kernels_visc_avg: z: a staging copy failed'
+      print *, 'm_dace_kernels_visc_avg: z: a device pointer did not resolve, or the kernel faulted'
       error stop 1
     end if
   end subroutine s_dace_visc_avg_z
