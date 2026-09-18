@@ -18,6 +18,9 @@ module m_viscous
     use m_dace_kernels, only: s_dace_fd_gradient
     use m_dace_kernels_visc_avg, only: s_dace_visc_avg_x, s_dace_visc_avg_z, &
         & visc_avg_dir_enabled, visc_avg_contract
+    use m_dace_kernels_visc_family, only: s_dace_visc_avg_d0, s_dace_visc_avg_d2, &
+        & s_dace_visc_grad_d0, s_dace_visc_grad_d1, s_dace_visc_grad_d2, &
+        & visc_family_enabled, visc_family_contract
 #endif
     use m_weno
     use m_muscl
@@ -388,6 +391,20 @@ contains
 
             $:GPU_UPDATE(device='[is1_viscous, is2_viscous, is3_viscous]')
 
+            #if defined(MFC_DACE)
+            if (visc_family_enabled(1) .and. visc_family_contract()) then
+            call s_dace_visc_grad_d0(x_cc(0:), q_prim_qp%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                 & q_prim_qp%vf(iv%beg + 1)%sf(0:, 0:, 0:), q_prim_qp%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                 & dqL_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                 & dqL_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                 & dqL_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                 & dqR_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                 & dqR_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                 & dqR_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), size(q_prim_qp%vf(iv%beg)%sf, 1), &
+                 & size(q_prim_qp%vf(iv%beg)%sf, 2), is3_viscous%beg, is3_viscous%end, iy%beg, iy%end, &
+                 & is1_viscous%beg, is1_viscous%end, is1_viscous%beg + 1, is1_viscous%end - 1)
+            else
+            #endif
             $:GPU_PARALLEL_LOOP(collapse=3)
             do l = is3_viscous%beg, is3_viscous%end
                 do k = iy%beg, iy%end
@@ -415,9 +432,27 @@ contains
                 end do
             end do
             $:END_GPU_PARALLEL_LOOP()
+            #if defined(MFC_DACE)
+            end if
+            #endif
 
             if (n > 0) then
                 #:if not MFC_CASE_OPTIMIZATION or num_dims > 1
+                    #if defined(MFC_DACE)
+                    if (visc_family_enabled(2) .and. visc_family_contract()) then
+                    call s_dace_visc_grad_d1(y_cc(0:), q_prim_qp%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                         & q_prim_qp%vf(iv%beg + 1)%sf(0:, 0:, 0:), q_prim_qp%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                         & dqL_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                         & dqL_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                         & dqL_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                         & dqR_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                         & dqR_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                         & dqR_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), size(q_prim_qp%vf(iv%beg)%sf, 1), &
+                         & size(q_prim_qp%vf(iv%beg)%sf, 2), is3_viscous%beg, is3_viscous%end, is2_viscous%beg, &
+                         & is2_viscous%end, is1_viscous%beg, is1_viscous%end, is2_viscous%beg + 1, &
+                         & is2_viscous%end - 1)
+                    else
+                    #endif
                     $:GPU_PARALLEL_LOOP(collapse=3)
                     do l = is3_viscous%beg, is3_viscous%end
                         do j = is2_viscous%beg + 1, is2_viscous%end
@@ -445,6 +480,9 @@ contains
                         end do
                     end do
                     $:END_GPU_PARALLEL_LOOP()
+                    #if defined(MFC_DACE)
+                    end if
+                    #endif
 
                     ! The two level-2 x-gradient face averages, one fused kernel (the TU generator is
                     ! scripts/visc_avg_tu_gen.py).  They are the pair of the eighteen s_get_viscous
@@ -506,6 +544,25 @@ contains
                     end if
                     #endif
 
+                    #if defined(MFC_DACE)
+                    if (visc_family_enabled(1) .and. visc_family_contract()) then
+                    call s_dace_visc_avg_d0(dqL_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                         & dqL_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                         & dqL_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                         & dqR_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                         & dqR_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                         & dqR_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                         & dqL_prim_dy_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                         & dqL_prim_dy_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                         & dqL_prim_dy_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                         & dqR_prim_dy_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                         & dqR_prim_dy_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                         & dqR_prim_dy_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                         & size(dqL_prim_dy_n(2)%vf(iv%beg)%sf, 1), size(dqL_prim_dy_n(2)%vf(iv%beg)%sf, 2), &
+                         & is3_viscous%beg, is3_viscous%end, is2_viscous%beg + 1, is2_viscous%end - 1, &
+                         & is1_viscous%beg, is1_viscous%end, is1_viscous%beg + 1, is1_viscous%end - 1)
+                    else
+                    #endif
                     $:GPU_PARALLEL_LOOP(collapse=3)
                     do l = is3_viscous%beg, is3_viscous%end
                         do k = is2_viscous%beg + 1, is2_viscous%end - 1
@@ -539,10 +596,29 @@ contains
                         end do
                     end do
                     $:END_GPU_PARALLEL_LOOP()
+                    #if defined(MFC_DACE)
+                    end if
+                    #endif
                 #:endif
 
                 if (p > 0) then
                     #:if not MFC_CASE_OPTIMIZATION or num_dims > 2
+                        #if defined(MFC_DACE)
+                        if (visc_family_enabled(3) .and. visc_family_contract()) then
+                        call s_dace_visc_grad_d2(z_cc(0:), q_prim_qp%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & q_prim_qp%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & q_prim_qp%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & size(q_prim_qp%vf(iv%beg)%sf, 1), size(q_prim_qp%vf(iv%beg)%sf, 2), &
+                             & is3_viscous%beg, is3_viscous%end, is2_viscous%beg, is2_viscous%end, &
+                             & is1_viscous%beg, is1_viscous%end, is3_viscous%beg + 1, is3_viscous%end - 1)
+                        else
+                        #endif
                         $:GPU_PARALLEL_LOOP(collapse=3)
                         do j = is3_viscous%beg + 1, is3_viscous%end
                             do l = is2_viscous%beg, is2_viscous%end
@@ -570,7 +646,30 @@ contains
                             end do
                         end do
                         $:END_GPU_PARALLEL_LOOP()
+                        #if defined(MFC_DACE)
+                        end if
+                        #endif
 
+                        #if defined(MFC_DACE)
+                        if (visc_family_enabled(1) .and. visc_family_contract()) then
+                        call s_dace_visc_avg_d0(dqL_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dz_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dz_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dz_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dz_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dz_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dz_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & size(dqL_prim_dz_n(3)%vf(iv%beg)%sf, 1), &
+                             & size(dqL_prim_dz_n(3)%vf(iv%beg)%sf, 2), is3_viscous%beg + 1, &
+                             & is3_viscous%end - 1, is2_viscous%beg, is2_viscous%end, is1_viscous%beg, &
+                             & is1_viscous%end, is1_viscous%beg + 1, is1_viscous%end - 1)
+                        else
+                        #endif
                         $:GPU_PARALLEL_LOOP(collapse=3)
                         do l = is3_viscous%beg + 1, is3_viscous%end - 1
                             do k = is2_viscous%beg, is2_viscous%end
@@ -606,6 +705,9 @@ contains
                             end do
                         end do
                         $:END_GPU_PARALLEL_LOOP()
+                        #if defined(MFC_DACE)
+                        end if
+                        #endif
 
                         ! The two level-2 z-gradient face averages -- the z twin of the x pair above.
                         ! Same shape, same y-face stencil; the swept axis moves to l and the level it
@@ -667,6 +769,26 @@ contains
                         end if
                         #endif
 
+                        #if defined(MFC_DACE)
+                        if (visc_family_enabled(3) .and. visc_family_contract()) then
+                        call s_dace_visc_avg_d2(dqL_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dy_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dy_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dy_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dy_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dy_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dy_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & size(dqL_prim_dy_n(2)%vf(iv%beg)%sf, 1), &
+                             & size(dqL_prim_dy_n(2)%vf(iv%beg)%sf, 2), is3_viscous%beg, is3_viscous%end, &
+                             & is2_viscous%beg + 1, is2_viscous%end - 1, is1_viscous%beg, is1_viscous%end, &
+                             & is3_viscous%beg + 1, is3_viscous%end - 1)
+                        else
+                        #endif
                         $:GPU_PARALLEL_LOOP(collapse=3)
                         do j = is3_viscous%beg + 1, is3_viscous%end
                             do l = is2_viscous%beg + 1, is2_viscous%end - 1
@@ -701,6 +823,29 @@ contains
                             end do
                         end do
                         $:END_GPU_PARALLEL_LOOP()
+                        #if defined(MFC_DACE)
+                        end if
+                        #endif
+                        #if defined(MFC_DACE)
+                        if (visc_family_enabled(3) .and. visc_family_contract()) then
+                        call s_dace_visc_avg_d2(dqL_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dx_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dx_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqL_prim_dx_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dx_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dx_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
+                             & dqR_prim_dx_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
+                             & size(dqL_prim_dx_n(1)%vf(iv%beg)%sf, 1), &
+                             & size(dqL_prim_dx_n(1)%vf(iv%beg)%sf, 2), is3_viscous%beg, is3_viscous%end, &
+                             & is2_viscous%beg, is2_viscous%end, is1_viscous%beg + 1, is1_viscous%end - 1, &
+                             & is3_viscous%beg + 1, is3_viscous%end - 1)
+                        else
+                        #endif
                         $:GPU_PARALLEL_LOOP(collapse=3)
                         do j = is3_viscous%beg + 1, is3_viscous%end
                             do l = is2_viscous%beg, is2_viscous%end
@@ -734,6 +879,9 @@ contains
                             end do
                         end do
                         $:END_GPU_PARALLEL_LOOP()
+                        #if defined(MFC_DACE)
+                        end if
+                        #endif
 
                         #if defined(MFC_DACE) && !defined(MFC_DACE_FDIFF_OFF)
                         ! P2/T2.3: the DaCe-compiled fused fd-gradient kernel
