@@ -459,7 +459,15 @@ contains
     character(len=8) :: env
     integer :: st
     logical, save :: cached = .false.
-    logical, save :: cached_val(3) = [.true., .false., .false.]
+    ! All three directions: the x kernel was the only one dispatched when this port landed
+    ! (f778f232), and the y/z libraries were built and linked but never extended to.  Validated
+    ! 2026-09-18 on the direction-varying viscous cases, because an x-varying IC hides a
+    ! mis-bound y/z dispatch (this project has been bitten by exactly that): vis32y bit-identical
+    ! for masks 100/110/101/111 and vis32z bit-identical for 100/111, each against its native
+    ! reference over 104 field files.  With 111 the census shows mfc_dace_weno_x/y/z at 36
+    ! launches each and the native reconstruction leaves it entirely -- 2.81 ms against the
+    ! 6.59 ms of native WENO it replaces (~2.3x).  Set MFC_DACE_WENO_DIRS to mask a direction.
+    logical, save :: cached_val(3) = [.true., .true., .true.]
 
     if (.not. cached) then
       call get_environment_variable('MFC_DACE_WENO_DIRS', env, status=st)
