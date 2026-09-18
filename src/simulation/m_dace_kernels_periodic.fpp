@@ -266,7 +266,13 @@ contains
     logical, save :: cached_val(3) = [.true., .true., .true.]
 
     if (.not. cached) then
-      cached_val = .false.
+      ! ON BY DEFAULT (2026-09-18); MFC_DACE_PERIODIC=0 falls back to the stock loop.
+      ! It was opt-in because an earlier A/B called it a wash -- the stage win was 1.51x then
+      ! too (4127 -> 2725 us), but the run's GPU total was 30 ms and the BC stage is ~13% of
+      ! it, so the win hid under the metric's noise.  With the other kernels since made
+      ! cheaper the same absolute saving is 4.12 -> 2.72 ms of a 21.03 ms total (6.7%), and the
+      ! stock kernel `m_boundary_common_s_populate_bc_direction` leaves the census entirely.
+      cached_val = .true.
       call get_environment_variable('MFC_DACE_PERIODIC', env, status=st)
       if (st == 0 .and. len_trim(env) >= 1 .and. env(1:1) /= '0') cached_val = .true.
       call get_environment_variable('MFC_DACE_PERIODIC_DIRS', env, status=st)
@@ -289,6 +295,20 @@ contains
          & .not. chemistry .and. .not. qbmm .and. &
          & buff_size == BAKED_BUFF_SIZE)
   end function periodic_dace_contract
+
+  !> Say ONCE per direction that the kernel engaged.  A stack of bit-identical comparisons cannot
+  !! tell two paths apart -- a dispatch that never fired has passed a gate in this project -- so the
+  !! run log has to carry which path it took.  (M3 and the fused averages already do this; the
+  !! periodic dispatch was the one without it.)
+  subroutine periodic_announce(nd)
+    integer, intent(in) :: nd
+    logical, save :: said(3) = [.false., .false., .false.]
+    character(len=1), parameter :: tag(3) = ['x', 'y', 'z']
+    if (.not. said(nd)) then
+      said(nd) = .true.
+      print '(a)', 'm_dace_kernels_periodic: ' // tag(nd) // ' engaged (MFC_DACE_PERIODIC)'
+    end if
+  end subroutine periodic_announce
 
   !> Populate the periodic ghost planes for one edge, replacing the stock per-cell loop.
   !!
@@ -315,6 +335,8 @@ contains
     end select
     mm1 = nsweep + 1
     mw1 = nsweep + bb + 1
+
+    call periodic_announce(dir_in)
 
     ! resolve the device addresses once: on the first call, and again only if some state was absent
     if (.not. (c_associated(x_state) .and. c_associated(y_state) .and. c_associated(z_state))) then
