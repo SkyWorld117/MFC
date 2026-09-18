@@ -84,7 +84,11 @@ exit 0
         # unpack permute) silently no-op under full IPO - a 376-arg routine
         # is far past the inliner's sane envelope.  Keep the extract (the
         # link requires it) but drop cross-file inlining.
-        foreach(_dace_noinline_file m_dace_kernels_sweeps m_dace_kernels_vsrc)
+        # m_dace_order is the one routine EVERY shim calls, so its body has to survive as a real
+        # object.  Without this nvfortran extracts it into the IPO library and never inlines it back:
+        # the object comes out 0 bytes, the compiler says nothing, and only the linker names it --
+        # `undefined reference to dace_order_` at the simulation link.
+        foreach(_dace_noinline_file m_dace_kernels_sweeps m_dace_kernels_vsrc m_dace_order)
             set_source_files_properties(
                 "${CMAKE_BINARY_DIR}/fypp/${ARGS_TARGET}/${_dace_noinline_file}.fpp.f90"
                 TARGET_DIRECTORY ${ARGS_TARGET}
