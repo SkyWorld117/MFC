@@ -90,14 +90,19 @@ macro(HANDLE_SOURCES target useCommon)
         list(APPEND ${target}_FPPs ${common_FPPs})
     endif()
 
-    # MFC_DACE=OFF must be a PRISTINE upstream build, and that includes the source list: the DaCe
-    # shim sources are wrapped in `#if defined(MFC_DACE)`, so with the flag off they preprocess to
-    # NOTHING -- and a source that produces no module then fails later in the build's module-copy
-    # step ("Error copying Fortran module ..."), which reads like a compiler problem and is not.
-    # Excluding them here is what makes the off configuration a plain upstream tree.
-    if (NOT MFC_DACE)
-        list(FILTER ${target}_FPPs EXCLUDE REGEX ".*/m_dace_kernels.*\.fpp$")
-        list(FILTER ${target}_FPPs EXCLUDE REGEX ".*/m_dev_mem\.fpp$")
+    # MFC_DACE: the shim sources, from OUTSIDE the tree (cmake/DacePatch.cmake).  They are added
+    # to the same list the tree's own .fpp go into, so the fypp loop below needs no special case --
+    # and because that loop names its output after the SOURCE BASENAME, the -Mnoinline property in
+    # MFCTargets.cmake keeps matching.  The split mirrors src/'s: common/ reaches every target that
+    # globs common (the shims `use` modules MFC compiles there), simulation/ only the simulation
+    # target.
+    if (MFC_DACE)
+        file(GLOB ${target}_dace_FPPs CONFIGURE_DEPENDS "${MFC_DACE_SHIM_DIR}/${target}/*.fpp")
+        list(APPEND ${target}_FPPs ${${target}_dace_FPPs})
+        if (${useCommon})
+            file(GLOB common_dace_FPPs CONFIGURE_DEPENDS "${MFC_DACE_SHIM_DIR}/common/*.fpp")
+            list(APPEND ${target}_FPPs ${common_dace_FPPs})
+        endif()
     endif()
 
     # Gather:

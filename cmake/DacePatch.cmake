@@ -20,9 +20,22 @@ if(NOT MFC_DACE)
     return()
 endif()
 
+# The shims live OUTSIDE the source tree, next to the libraries they call.  They are build
+# products of the porting pipeline -- generated from the baked manifests -- exactly like the .so
+# files, so the fork's src/ holds nothing of ours and `MFC_DACE=OFF` is a plain upstream tree.
+# The layout mirrors src/'s own split because the shims must reach the same targets the
+# corresponding MFC sources do: `common/` into every target that globs common, `simulation/` into
+# the simulation target only.
+set(MFC_DACE_SHIM_DIR "${CMAKE_SOURCE_DIR}/../pipeline/mfc_dace/shims")
 set(MFC_DACE_PATCH  "${CMAKE_SOURCE_DIR}/patches/mfc_dace.patch")
 set(MFC_DACE_MIRROR "${CMAKE_BINARY_DIR}/dace_mirror")
 set(MFC_DACE_STAMP  "${MFC_DACE_MIRROR}/.patched")
+
+if(NOT IS_DIRECTORY "${MFC_DACE_SHIM_DIR}")
+    message(FATAL_ERROR
+        "MFC_DACE=ON but the shim sources are missing:\n  ${MFC_DACE_SHIM_DIR}\n"
+        "They are produced by the porting pipeline together with the kernel libraries.")
+endif()
 
 if(NOT EXISTS "${MFC_DACE_PATCH}")
     message(FATAL_ERROR
