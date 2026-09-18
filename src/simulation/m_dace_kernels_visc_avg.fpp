@@ -17,7 +17,14 @@ module m_dace_kernels_visc_avg
       integer(c_size_t), value :: n
     end function
 
-    subroutine visc_avg_x_run(state, dxl1, dxl2, dxl3, dxr1, dxr2, dxr3, oxl1, oxl2, oxl3, oxr1, oxr2, oxr3, dxl1_d0, dxl1_d1, dxl2_d0, dxl2_d1, dxl3_d0, dxl3_d1, dxr1_d0, dxr1_d1, dxr2_d0, dxr2_d1, dxr3_d0, dxr3_d1, jlb, jle, jrb, jre, kxb, kxe, lxb, lxe, oxl1_d0, oxl1_d1, oxl2_d0, oxl2_d1, oxl3_d0, oxl3_d1, oxr1_d0, oxr1_d1, oxr2_d0, oxr2_d1, oxr3_d0, oxr3_d1) &
+    ! The runtime's own lookup: the address the OpenACC runtime will use for a host variable.
+    function acc_deviceptr_(hostptr) bind(C, name='acc_deviceptr')
+      import :: c_ptr
+      type(c_ptr) :: acc_deviceptr_
+      type(c_ptr), value :: hostptr
+    end function
+
+    subroutine visc_avg_x_run(state, dxl1, dxl2, dxl3, dxr1, dxr2, dxr3, oxl1, oxl2, oxl3, oxr1, oxr2, oxr3, dxl1_d0, dxl1_d1, dxl2_d0, dxl2_d1, dxl3_d0, dxl3_d1, dxr1_d0, dxr1_d1, dxr2_d0, dxr2_d1, dxr3_d0, dxr3_d1, jhi, jlb, jlo, jre, kxb, kxe, lxb, lxe, oxl1_d0, oxl1_d1, oxl2_d0, oxl2_d1, oxl3_d0, oxl3_d1, oxr1_d0, oxr1_d1, oxr2_d0, oxr2_d1, oxr3_d0, oxr3_d1) &
         bind(C, name='__program_mfc_dace_visc_avg_x')
       import :: c_ptr, c_int, c_int64_t, c_double
       type(c_ptr), value :: state
@@ -45,9 +52,9 @@ module m_dace_kernels_visc_avg
       integer(c_int64_t), value :: dxr2_d1
       integer(c_int64_t), value :: dxr3_d0
       integer(c_int64_t), value :: dxr3_d1
+      integer(c_int), value :: jhi
       integer(c_int), value :: jlb
-      integer(c_int), value :: jle
-      integer(c_int), value :: jrb
+      integer(c_int), value :: jlo
       integer(c_int), value :: jre
       integer(c_int), value :: kxb
       integer(c_int), value :: kxe
@@ -67,7 +74,7 @@ module m_dace_kernels_visc_avg
       integer(c_int64_t), value :: oxr3_d1
     end subroutine
 
-    function visc_avg_x_init(dxl1_d0, dxl1_d1, dxl2_d0, dxl2_d1, dxl3_d0, dxl3_d1, dxr1_d0, dxr1_d1, dxr2_d0, dxr2_d1, dxr3_d0, dxr3_d1, jlb, jle, jrb, jre, kxb, kxe, lxb, lxe, oxl1_d0, oxl1_d1, oxl2_d0, oxl2_d1, oxl3_d0, oxl3_d1, oxr1_d0, oxr1_d1, oxr2_d0, oxr2_d1, oxr3_d0, oxr3_d1) bind(C, name='__dace_init_mfc_dace_visc_avg_x')
+    function visc_avg_x_init(dxl1_d0, dxl1_d1, dxl2_d0, dxl2_d1, dxl3_d0, dxl3_d1, dxr1_d0, dxr1_d1, dxr2_d0, dxr2_d1, dxr3_d0, dxr3_d1, jhi, jlb, jlo, jre, kxb, kxe, lxb, lxe, oxl1_d0, oxl1_d1, oxl2_d0, oxl2_d1, oxl3_d0, oxl3_d1, oxr1_d0, oxr1_d1, oxr2_d0, oxr2_d1, oxr3_d0, oxr3_d1) bind(C, name='__dace_init_mfc_dace_visc_avg_x')
       import :: c_ptr, c_int, c_int64_t, c_double
       type(c_ptr) :: visc_avg_x_init
       integer(c_int64_t), value :: dxl1_d0
@@ -82,9 +89,9 @@ module m_dace_kernels_visc_avg
       integer(c_int64_t), value :: dxr2_d1
       integer(c_int64_t), value :: dxr3_d0
       integer(c_int64_t), value :: dxr3_d1
+      integer(c_int), value :: jhi
       integer(c_int), value :: jlb
-      integer(c_int), value :: jle
-      integer(c_int), value :: jrb
+      integer(c_int), value :: jlo
       integer(c_int), value :: jre
       integer(c_int), value :: kxb
       integer(c_int), value :: kxe
@@ -110,7 +117,7 @@ module m_dace_kernels_visc_avg
       type(c_ptr), value :: state
     end function
 
-    subroutine visc_avg_z_run(state, dzl1, dzl2, dzl3, dzr1, dzr2, dzr3, ozl1, ozl2, ozl3, ozr1, ozr2, ozr3, dzl1_d0, dzl1_d1, dzl2_d0, dzl2_d1, dzl3_d0, dzl3_d1, dzr1_d0, dzr1_d1, dzr2_d0, dzr2_d1, dzr3_d0, dzr3_d1, jlb, jle, jrb, jre, kzb, kze, lzb, lze, ozl1_d0, ozl1_d1, ozl2_d0, ozl2_d1, ozl3_d0, ozl3_d1, ozr1_d0, ozr1_d1, ozr2_d0, ozr2_d1, ozr3_d0, ozr3_d1) &
+    subroutine visc_avg_z_run(state, dzl1, dzl2, dzl3, dzr1, dzr2, dzr3, ozl1, ozl2, ozl3, ozr1, ozr2, ozr3, dzl1_d0, dzl1_d1, dzl2_d0, dzl2_d1, dzl3_d0, dzl3_d1, dzr1_d0, dzr1_d1, dzr2_d0, dzr2_d1, dzr3_d0, dzr3_d1, jhi, jlb, jlo, jre, kzb, kze, lzb, lze, ozl1_d0, ozl1_d1, ozl2_d0, ozl2_d1, ozl3_d0, ozl3_d1, ozr1_d0, ozr1_d1, ozr2_d0, ozr2_d1, ozr3_d0, ozr3_d1) &
         bind(C, name='__program_mfc_dace_visc_avg_z')
       import :: c_ptr, c_int, c_int64_t, c_double
       type(c_ptr), value :: state
@@ -138,9 +145,9 @@ module m_dace_kernels_visc_avg
       integer(c_int64_t), value :: dzr2_d1
       integer(c_int64_t), value :: dzr3_d0
       integer(c_int64_t), value :: dzr3_d1
+      integer(c_int), value :: jhi
       integer(c_int), value :: jlb
-      integer(c_int), value :: jle
-      integer(c_int), value :: jrb
+      integer(c_int), value :: jlo
       integer(c_int), value :: jre
       integer(c_int), value :: kzb
       integer(c_int), value :: kze
@@ -160,7 +167,7 @@ module m_dace_kernels_visc_avg
       integer(c_int64_t), value :: ozr3_d1
     end subroutine
 
-    function visc_avg_z_init(dzl1_d0, dzl1_d1, dzl2_d0, dzl2_d1, dzl3_d0, dzl3_d1, dzr1_d0, dzr1_d1, dzr2_d0, dzr2_d1, dzr3_d0, dzr3_d1, jlb, jle, jrb, jre, kzb, kze, lzb, lze, ozl1_d0, ozl1_d1, ozl2_d0, ozl2_d1, ozl3_d0, ozl3_d1, ozr1_d0, ozr1_d1, ozr2_d0, ozr2_d1, ozr3_d0, ozr3_d1) bind(C, name='__dace_init_mfc_dace_visc_avg_z')
+    function visc_avg_z_init(dzl1_d0, dzl1_d1, dzl2_d0, dzl2_d1, dzl3_d0, dzl3_d1, dzr1_d0, dzr1_d1, dzr2_d0, dzr2_d1, dzr3_d0, dzr3_d1, jhi, jlb, jlo, jre, kzb, kze, lzb, lze, ozl1_d0, ozl1_d1, ozl2_d0, ozl2_d1, ozl3_d0, ozl3_d1, ozr1_d0, ozr1_d1, ozr2_d0, ozr2_d1, ozr3_d0, ozr3_d1) bind(C, name='__dace_init_mfc_dace_visc_avg_z')
       import :: c_ptr, c_int, c_int64_t, c_double
       type(c_ptr) :: visc_avg_z_init
       integer(c_int64_t), value :: dzl1_d0
@@ -175,9 +182,9 @@ module m_dace_kernels_visc_avg
       integer(c_int64_t), value :: dzr2_d1
       integer(c_int64_t), value :: dzr3_d0
       integer(c_int64_t), value :: dzr3_d1
+      integer(c_int), value :: jhi
       integer(c_int), value :: jlb
-      integer(c_int), value :: jle
-      integer(c_int), value :: jrb
+      integer(c_int), value :: jlo
       integer(c_int), value :: jre
       integer(c_int), value :: kzb
       integer(c_int), value :: kze
@@ -319,13 +326,13 @@ contains
   end function visc_avg_contract
 
   !> The two level-2 x-gradient face averages (both sides of the y-face stencil), one kernel.
-  !! The rows are staged into buffers THIS shim owns with !$acc parallel loops -- never
-  !! acc_deviceptr of MFC's arrays, which returns a non-null address the kernel cannot use.
+  !! The rows are staged into buffers THIS shim owns with !$acc parallel loops, so the kernel never sees an acc_deviceptr of MFC's arrays.
+  !! Set MFC_DACE_VISC_AVG_STAGE=0 and re-bake to drop the staging.
   subroutine s_dace_visc_avg_x(vxL, vxR, oxL, oxR, ivb, ive, k1b, k1e, k2b, k2e, k3b, k3e)
     type(vector_field), intent(in) :: vxL, vxR
     type(vector_field), intent(inout) :: oxL, oxR
     integer, intent(in) :: ivb, ive, k1b, k1e, k2b, k2e, k3b, k3e
-    integer :: ierr, jlb, jle, jrb, jre, kxb, kxe, kzb, kze, lxb, lxe, lzb, lze, b1, b2, b3
+    integer :: ierr, kxb, kxe, kzb, kze, lxb, lxe, lzb, lze, jlo, jhi, jlb, jre, b1, b2, b3
     integer :: ii, jj, kk
 
     call visc_avg_announce(1)
@@ -340,8 +347,11 @@ contains
     kzb = k1b - b1;     kze = k1e - b1
     lxb = k3b - b3;     lxe = k3e - b3
     lzb = k3b + 1 - b3; lze = k3e - 1 - b3
-    jlb = k2b + 1 - b2; jle = k2e - b2
-    jrb = k2b - b2;     jre = k2e - 1 - b2
+    ! the two arms share ONE nest, so the kernel takes the UNION of their j ranges (jlo..jhi) plus
+    ! the two guards that select each arm inside it.  The union is contiguous by construction:
+    ! the L arm runs k2b+1..k2e and the R arm k2b..k2e-1.
+    jlo = k2b - b2;     jhi = k2e - b2
+    jlb = k2b + 1 - b2; jre = k2e - 1 - b2
 
       if (.not. c_associated(x_dxl1_dev)) then
         ierr = cudaMalloc_(x_dxl1_dev, int(8_c_size_t*int(size(vxl%vf(ivb + 0)%sf, 1), c_size_t)* &
@@ -464,7 +474,7 @@ contains
           & int(size(vxl%vf(ivb + 2)%sf, 2), c_int64_t), int(size(vxr%vf(ivb + 0)%sf, 1), c_int64_t), &
           & int(size(vxr%vf(ivb + 0)%sf, 2), c_int64_t), int(size(vxr%vf(ivb + 1)%sf, 1), c_int64_t), &
           & int(size(vxr%vf(ivb + 1)%sf, 2), c_int64_t), int(size(vxr%vf(ivb + 2)%sf, 1), c_int64_t), &
-          & int(size(vxr%vf(ivb + 2)%sf, 2), c_int64_t), int(jlb, c_int), int(jle, c_int), int(jrb, c_int), &
+          & int(size(vxr%vf(ivb + 2)%sf, 2), c_int64_t), int(jhi, c_int), int(jlb, c_int), int(jlo, c_int), &
           & int(jre, c_int), int(kxb, c_int), int(kxe, c_int), int(lxb, c_int), int(lxe, c_int), &
           & int(size(oxl%vf(ivb + 0)%sf, 1), c_int64_t), int(size(oxl%vf(ivb + 0)%sf, 2), c_int64_t), &
           & int(size(oxl%vf(ivb + 1)%sf, 1), c_int64_t), int(size(oxl%vf(ivb + 1)%sf, 2), c_int64_t), &
@@ -481,7 +491,7 @@ contains
         & int(size(vxr%vf(ivb + 0)%sf, 1), c_int64_t), int(size(vxr%vf(ivb + 0)%sf, 2), c_int64_t), &
         & int(size(vxr%vf(ivb + 1)%sf, 1), c_int64_t), int(size(vxr%vf(ivb + 1)%sf, 2), c_int64_t), &
         & int(size(vxr%vf(ivb + 2)%sf, 1), c_int64_t), int(size(vxr%vf(ivb + 2)%sf, 2), c_int64_t), &
-        & int(jlb, c_int), int(jle, c_int), int(jrb, c_int), int(jre, c_int), int(kxb, c_int), &
+        & int(jhi, c_int), int(jlb, c_int), int(jlo, c_int), int(jre, c_int), int(kxb, c_int), &
         & int(kxe, c_int), int(lxb, c_int), int(lxe, c_int), int(size(oxl%vf(ivb + 0)%sf, 1), c_int64_t), &
         & int(size(oxl%vf(ivb + 0)%sf, 2), c_int64_t), int(size(oxl%vf(ivb + 1)%sf, 1), c_int64_t), &
         & int(size(oxl%vf(ivb + 1)%sf, 2), c_int64_t), int(size(oxl%vf(ivb + 2)%sf, 1), c_int64_t), &
@@ -550,13 +560,13 @@ contains
   end subroutine s_dace_visc_avg_x
 
   !> The two level-2 z-gradient face averages (both sides of the y-face stencil), one kernel.
-  !! The rows are staged into buffers THIS shim owns with !$acc parallel loops -- never
-  !! acc_deviceptr of MFC's arrays, which returns a non-null address the kernel cannot use.
+  !! The rows are staged into buffers THIS shim owns with !$acc parallel loops, so the kernel never sees an acc_deviceptr of MFC's arrays.
+  !! Set MFC_DACE_VISC_AVG_STAGE=0 and re-bake to drop the staging.
   subroutine s_dace_visc_avg_z(vzL, vzR, ozL, ozR, ivb, ive, k1b, k1e, k2b, k2e, k3b, k3e)
     type(vector_field), intent(in) :: vzL, vzR
     type(vector_field), intent(inout) :: ozL, ozR
     integer, intent(in) :: ivb, ive, k1b, k1e, k2b, k2e, k3b, k3e
-    integer :: ierr, jlb, jle, jrb, jre, kxb, kxe, kzb, kze, lxb, lxe, lzb, lze, b1, b2, b3
+    integer :: ierr, kxb, kxe, kzb, kze, lxb, lxe, lzb, lze, jlo, jhi, jlb, jre, b1, b2, b3
     integer :: ii, jj, kk
 
     call visc_avg_announce(2)
@@ -571,8 +581,11 @@ contains
     kzb = k1b - b1;     kze = k1e - b1
     lxb = k3b - b3;     lxe = k3e - b3
     lzb = k3b + 1 - b3; lze = k3e - 1 - b3
-    jlb = k2b + 1 - b2; jle = k2e - b2
-    jrb = k2b - b2;     jre = k2e - 1 - b2
+    ! the two arms share ONE nest, so the kernel takes the UNION of their j ranges (jlo..jhi) plus
+    ! the two guards that select each arm inside it.  The union is contiguous by construction:
+    ! the L arm runs k2b+1..k2e and the R arm k2b..k2e-1.
+    jlo = k2b - b2;     jhi = k2e - b2
+    jlb = k2b + 1 - b2; jre = k2e - 1 - b2
 
       if (.not. c_associated(z_dzl1_dev)) then
         ierr = cudaMalloc_(z_dzl1_dev, int(8_c_size_t*int(size(vzl%vf(ivb + 0)%sf, 1), c_size_t)* &
@@ -695,7 +708,7 @@ contains
           & int(size(vzl%vf(ivb + 2)%sf, 2), c_int64_t), int(size(vzr%vf(ivb + 0)%sf, 1), c_int64_t), &
           & int(size(vzr%vf(ivb + 0)%sf, 2), c_int64_t), int(size(vzr%vf(ivb + 1)%sf, 1), c_int64_t), &
           & int(size(vzr%vf(ivb + 1)%sf, 2), c_int64_t), int(size(vzr%vf(ivb + 2)%sf, 1), c_int64_t), &
-          & int(size(vzr%vf(ivb + 2)%sf, 2), c_int64_t), int(jlb, c_int), int(jle, c_int), int(jrb, c_int), &
+          & int(size(vzr%vf(ivb + 2)%sf, 2), c_int64_t), int(jhi, c_int), int(jlb, c_int), int(jlo, c_int), &
           & int(jre, c_int), int(kzb, c_int), int(kze, c_int), int(lzb, c_int), int(lze, c_int), &
           & int(size(ozl%vf(ivb + 0)%sf, 1), c_int64_t), int(size(ozl%vf(ivb + 0)%sf, 2), c_int64_t), &
           & int(size(ozl%vf(ivb + 1)%sf, 1), c_int64_t), int(size(ozl%vf(ivb + 1)%sf, 2), c_int64_t), &
@@ -712,7 +725,7 @@ contains
         & int(size(vzr%vf(ivb + 0)%sf, 1), c_int64_t), int(size(vzr%vf(ivb + 0)%sf, 2), c_int64_t), &
         & int(size(vzr%vf(ivb + 1)%sf, 1), c_int64_t), int(size(vzr%vf(ivb + 1)%sf, 2), c_int64_t), &
         & int(size(vzr%vf(ivb + 2)%sf, 1), c_int64_t), int(size(vzr%vf(ivb + 2)%sf, 2), c_int64_t), &
-        & int(jlb, c_int), int(jle, c_int), int(jrb, c_int), int(jre, c_int), int(kzb, c_int), &
+        & int(jhi, c_int), int(jlb, c_int), int(jlo, c_int), int(jre, c_int), int(kzb, c_int), &
         & int(kze, c_int), int(lzb, c_int), int(lze, c_int), int(size(ozl%vf(ivb + 0)%sf, 1), c_int64_t), &
         & int(size(ozl%vf(ivb + 0)%sf, 2), c_int64_t), int(size(ozl%vf(ivb + 1)%sf, 1), c_int64_t), &
         & int(size(ozl%vf(ivb + 1)%sf, 2), c_int64_t), int(size(ozl%vf(ivb + 2)%sf, 1), c_int64_t), &
