@@ -332,16 +332,6 @@ contains
             ! STALE HOST copy (= the initial state) — every q_cons_vf*.dat
             ! from this writer was the IC, not the evolved state.
             $:GPU_UPDATE(host='[q_cons_vf(i)%sf(:, :, :)]')
-            block
-                character(len=32) :: dbg_env
-                integer :: dbg_st
-                call get_environment_variable('MFC_EVOLVE_DEBUG', dbg_env, status=dbg_st)
-                if (dbg_st == 0 .and. i == 1) then
-                    print *, 'WRDBG host q(1)%sf(16,16,16) =', q_cons_vf(1)%sf(16, 16, 16), &
-                             & ' sf(0,0,0) =', q_cons_vf(1)%sf(0, 0, 0)
-                end if
-            end block
-
             write (file_path, '(A,I0,A)') trim(t_step_dir) // '/q_cons_vf', i, '.dat'
 
             open (2, FILE=trim(file_path), form='unformatted', STATUS='new')

@@ -160,18 +160,6 @@ contains
         ! The edge's code derives from the face's bc_* scalar, so testing the scalar is the dispatch
         ! condition; a case that overrides individual cells of an edge through bc_type_edge would
         ! bypass this check and must not use the switch.  `bc_loc` is -1 for %beg.
-        block
-            character(len=8) :: pb_dbg
-            integer :: pb_st
-            logical, save :: pb_done(3, 2) = .false.
-            call get_environment_variable('MFC_DACE_PERIODIC_DBG', pb_dbg, status=pb_st)
-            if (pb_st == 0 .and. len_trim(pb_dbg) > 0 .and. .not. pb_done(bc_dir, merge(1, 2, bc_loc == -1))) then
-                pb_done(bc_dir, merge(1, 2, bc_loc == -1)) = .true.
-                print '(A,I0,A,I2,A,L1,A,L1,A,I0,A,I0,A,I0,A,L1)', 'PER-DBG dir=', bc_dir, ' loc=', bc_loc, &
-                    & ' enabled=', periodic_dace_enabled(bc_dir), ' contract=', periodic_dace_contract(), &
-                    & ' sys=', sys_size, ' buff=', buff_size, ' ndim=', num_dims, ' bxbeg=', bc_x%beg == BC_PERIODIC
-            end if
-        end block
         if (periodic_dace_enabled(bc_dir) .and. periodic_dace_contract()) then
             if ((bc_dir == 1 .and. bc_loc == -1 .and. bc_x%beg == BC_PERIODIC) .or. &
                 & (bc_dir == 1 .and. bc_loc /= -1 .and. bc_x%end == BC_PERIODIC) .or. &
