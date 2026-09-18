@@ -21,97 +21,17 @@ module m_riemann_solver_hllc
         & get_mixture_energy_mass, get_species_specific_heats_r, get_species_enthalpies_rt, get_mixture_specific_heat_cp_mass, &
         & molecular_weights
     use m_riemann_state
-#if defined(MFC_DACE)
-    use m_dace_kernels_sweeps, only: s_dace_hllc_x, s_dace_hllc_capture
-    use m_dace_kernels_fused, only: s_dace_fused_x
-#if defined(MFC_DACE_WENO3)
-    !> M4: the WENO3-mapped fused kernel family (buff=3, a separate library set).
-    use m_dace_kernels_fused3, only: s_dace_fused3_x
-#endif
-    !> The fused dispatch reconstructs in place: it reads the primitive buffer and
-    !! the WENO coefficient tables directly, and acts on the verdict m_weno already
-    !! published for this direction (dace_fused_weno_active).  Reading that bit --
-    !! rather than re-deriving the decision here -- is what keeps the skipped
-    !! reconstruction and the fused solve in lockstep.
-    use m_weno, only: dace_fused_weno_active, dace_fused3_weno_active, v_rs_weno, &
-                      poly_coef_cbL_x, poly_coef_cbR_x, d_cbL_x, d_cbR_x, &
-                      poly_coef_cbL_y, poly_coef_cbR_y, d_cbL_y, d_cbR_y, &
-                      poly_coef_cbL_z, poly_coef_cbR_z, d_cbL_z, d_cbR_z, &
-                      beta_coef_x, beta_coef_y, beta_coef_z
-#endif
 
     implicit none
 
 contains
-
-    !> Runtime mode for the DaCe HLLC dispatch (P2/T2.3 unit harness).
-    !! Reads MFC_DACE_HLLC_RT_OFF once: unset -> 1 (DaCe kernel only),
-    !! "1" -> 0 (native OpenACC kernel only), "2" -> capture (run the DaCe
-    !! call, then the native OpenACC kernel, then dump both result sets).
-    function hllc_dace_mode() result(m)
-        integer :: m
-        character(len=8) :: env
-        integer :: st
-        logical, save :: cached = .false.
-        integer, save :: cached_val = 1
-
-        if (.not. cached) then
-            cached_val = 1
-            call get_environment_variable('MFC_DACE_HLLC_RT_OFF', env, status=st)
-            if (st == 0) then
-                if (trim(env) == '1') then
-                    cached_val = 0
-                else if (trim(env) == '2') then
-                    cached_val = 2
-                end if
-            end if
-            cached = .true.
-        end if
-        m = cached_val
-    end function hllc_dace_mode
-
-    !> The dispatch's bake contract, hoisted so the OpenACC fallback reads
-    !! the SAME predicate as the DaCe call (the two-guard split above once
-    !! skipped BOTH paths when the contract was false with mode = 1).
-    !> Per-direction kill switch (bisect): MFC_DACE_HLLC_DIRS holds a
-    !! mask string like "101" (x on, y off, z on); unset = all enabled.
-    function hllc_dace_dirs(nd) result(c)
-        integer, intent(in) :: nd
-        logical :: c
-        character(len=8) :: env
-        integer :: st
-        logical, save :: cached = .false.
-        logical, save :: cached_val(3) = [.true., .true., .true.]
-
-        if (.not. cached) then
-            call get_environment_variable('MFC_DACE_HLLC_DIRS', env, status=st)
-            if (st == 0 .and. len_trim(env) >= 1) then
-                cached_val(1) = env(1:1) == '1'
-                cached_val(2) = len_trim(env) < 2 .or. env(2:2) == '1'
-                cached_val(3) = len_trim(env) < 3 .or. env(3:3) == '1'
-            end if
-            cached = .true.
-        end if
-        c = cached_val(nd)
-    end function hllc_dace_dirs
-
-    function hllc_dace_contract() result(c)
-        logical :: c
-        c = (num_fluids == 2 .and. model_eqns == 2 .and. &
-             & wave_speeds == wave_speeds_direct .and. &
-             & .not. surface_tension .and. .not. chemistry .and. &
-             & .not. hypoelasticity .and. .not. mpp_lim .and. &
-             & .not. cyl_coord .and. .not. bubbles_euler .and. &
-             & .not. qbmm .and. .not. hyper_cleaning .and. &
-             & .not. relativity .and. .not. alt_soundspeed)
-    end function hllc_dace_contract
 
     !> HLLC Riemann solver with contact restoration, Toro et al. Shock Waves (1994)
     subroutine s_hllc_riemann_solver(qL_prim_rsx_vf, dqL_prim_dx_vf, dqL_prim_dy_vf, dqL_prim_dz_vf, qL_prim_vf, qR_prim_rsx_vf, &
                                      & dqR_prim_dx_vf, dqR_prim_dy_vf, dqR_prim_dz_vf, qR_prim_vf, q_prim_vf, flux_vf, &
                                      & flux_src_vf, flux_gsrc_vf, norm_dir, ix, iy, iz)
 
-        real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout), target :: qL_prim_rsx_vf, qR_prim_rsx_vf
+        real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: qL_prim_rsx_vf, qR_prim_rsx_vf
         type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
         type(scalar_field), allocatable, dimension(:), intent(inout) :: qL_prim_vf, qR_prim_vf
         type(scalar_field), allocatable, dimension(:), intent(inout) :: dqL_prim_dx_vf, dqR_prim_dx_vf, dqL_prim_dy_vf, &
@@ -196,7 +116,6 @@ contains
         real(wp) :: pcorr                      !< low Mach number correction
         integer :: i, j, k, l, q               !< Generic loop iterators
         integer :: Re_size_loc1, Re_size_loc2  !< host copy of Re_size; amdflang reads the declare-target original stale cross-TU
-        integer :: rsz1_loc, rsz2_loc  !< the DaCe dispatch's per-row Re_size (0 = inviscid)
 
         ! HLLC star-state helpers
         #:if not MFC_CASE_OPTIMIZATION and USING_AMD
@@ -247,8 +166,6 @@ contains
         call s_initialize_riemann_solver(flux_src_vf, norm_dir)
 
         Re_size_loc1 = Re_size(1); Re_size_loc2 = Re_size(2)
-        rsz1_loc = merge(Re_size(1), 0, allocated(Res_gs))
-        rsz2_loc = merge(Re_size(2), 0, allocated(Res_gs))
 
         #:for NORM_DIR, XYZ, STENCIL_VAR, COORDS, X_BND, Y_BND, Z_BND in &
                     [(1, 'x', 'j', '{STENCIL_IDX}, k, l', 'is1', 'is2', 'is3'), &
@@ -929,52 +846,6 @@ contains
                         else if (hypoelasticity) then
                         #:else
                         else
-                        #:endif
-                        #:if not HYPO
-#if defined(MFC_DACE) && !defined(MFC_DACE_HLLC_OFF)
-                        if (dace_fused_weno_active(${NORM_DIR}$)) then
-                            !> M1 fused sweep: one kernel does this direction's
-                            !! reconstruction AND solve, so neither the packed
-                            !! states nor the reconstruction's vL/vR buffers are
-                            !! read here.  The sweep bounds, the flux/vsrc/fsrc
-                            !! staging and the unpack are the sweeps dispatch's.
-                            call s_dace_fused_x(v_rs_weno, poly_coef_cbL_${XYZ}$, poly_coef_cbR_${XYZ}$, &
-                                               & d_cbL_${XYZ}$, d_cbR_${XYZ}$, &
-                                               & flux_rsx_vf, flux_src_rsx_vf, vel_src_rsx_vf, &
-                                               & is1%beg, is1%end, is2%beg, is2%end, is3%beg, is3%end, &
-                                               & size(v_rs_weno, 1), size(v_rs_weno, 2), size(v_rs_weno, 3), &
-                                               & sys_size, eqn_idx%adv%end - eqn_idx%adv%beg + 1, num_vels, &
-                                               & rsz1_loc, rsz2_loc, ${NORM_DIR}$)
-                        end if
-#if defined(MFC_DACE_WENO3)
-                        if (dace_fused3_weno_active(${NORM_DIR}$)) then
-                            !> M4 fused WENO3: identical shape to the M1 branch, plus the
-                            !! beta_coef table WENO3 reads its smoothness indicators from.
-                            call s_dace_fused3_x(v_rs_weno, poly_coef_cbL_${XYZ}$, poly_coef_cbR_${XYZ}$, &
-                                               & d_cbL_${XYZ}$, d_cbR_${XYZ}$, beta_coef_${XYZ}$, &
-                                               & flux_rsx_vf, flux_src_rsx_vf, vel_src_rsx_vf, &
-                                               & is1%beg, is1%end, is2%beg, is2%end, is3%beg, is3%end, &
-                                               & size(v_rs_weno, 1), size(v_rs_weno, 2), size(v_rs_weno, 3), &
-                                               & sys_size, eqn_idx%adv%end - eqn_idx%adv%beg + 1, num_vels, &
-                                               & rsz1_loc, rsz2_loc, ${NORM_DIR}$)
-                        end if
-#endif
-                        if (.not. dace_fused_weno_active(${NORM_DIR}$) .and. &
-                            & .not. dace_fused3_weno_active(${NORM_DIR}$) .and. &
-                            & hllc_dace_contract() .and. hllc_dace_mode() == 1 .and. &
-            & hllc_dace_dirs(${NORM_DIR}$)) then
-                            call s_dace_hllc_x(qL_prim_rsx_vf, qR_prim_rsx_vf, &
-                                               & flux_rsx_vf, flux_src_rsx_vf, vel_src_rsx_vf, &
-                                               & is1%beg, is1%end, is2%beg, is2%end, is3%beg, is3%end, &
-                                               & size(qL_prim_rsx_vf, 1), size(qL_prim_rsx_vf, 2), size(qL_prim_rsx_vf, 3), &
-                                               & sys_size, eqn_idx%adv%end - eqn_idx%adv%beg + 1, num_vels, &
-                                               & rsz1_loc, rsz2_loc, ${NORM_DIR}$)
-                        end if
-                        if (.not. dace_fused_weno_active(${NORM_DIR}$) .and. &
-                            & .not. (hllc_dace_contract() .and. hllc_dace_mode() == 1)) then
-#else
-                        if (.true.) then
-#endif
                         #:endif
                         ! 5-equation model (model_eqns=2): mixture total energy, volume fraction advection. Emitted twice --
                         ! once specialized for hypoelasticity, once pure-fluid. The #:if HYPO guards strip every hypoelastic
@@ -1730,16 +1601,6 @@ contains
                             end do
                         end do
                         $:END_GPU_PARALLEL_LOOP()
-                        #:if not HYPO
-#if defined(MFC_DACE) && !defined(MFC_DACE_HLLC_OFF)
-                        end if
-                        if (hllc_dace_mode() == 2) then
-                            call s_dace_hllc_capture()
-                        end if
-#else
-                        end if
-#endif
-                        #:endif
                     #:endfor
                 end if
             end if

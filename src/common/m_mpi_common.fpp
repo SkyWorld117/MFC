@@ -14,9 +14,6 @@ module m_mpi_common
 
     use m_derived_types
     use m_global_parameters
-#if defined(MFC_DACE)
-    use m_dace_kernels_pack, only: s_dace_pack_send
-#endif
     use m_helper
     use ieee_arithmetic
     use m_nvtx
@@ -639,26 +636,6 @@ contains
         #:for mpi_dir in [1, 2, 3]
             if (mpi_dir == ${mpi_dir}$) then
                 #:if mpi_dir == 1
-#if defined(MFC_DACE) && !defined(MFC_DACE_PACK_OFF)
-                    ! P2/T2.3: the DaCe-compiled dir-1 plain halo-pack kernel
-                    ! (T2.2 TU, buff_size/nVar baked, pack_offset runtime).
-                    ! The shim unpacks into HOST buff_send; the caller-side
-                    ! acc update device makes it visible to the
-                    ! GPU_HOST_DATA(use_device_addr) sendrecv below.  The
-                    ! chem/qbmm extras and any nVar mismatch keep the OpenACC
-                    ! loop.  q_comm is declare-create'd (device-resident in
-                    ! the OpenACC build), so the input stages via acc update
-                    ! host.
-                    if (.not. chem_diff_comm .and. .not. qbmm_comm .and. nVar == 8) then
-                        ! The shim stages DEVICE-RESIDENT: an acc-kernel
-                        ! transpose packs the declare-created device q_comm
-                        ! straight into the kernel buffer, and the packed
-                        ! result lands in the device buff_send via a
-                        ! device-to-device copy — no host staging, no acc
-                        ! update here.
-                        call s_dace_pack_send(q_comm(1:nVar), buff_send, pack_offset)
-                    else
-#endif
                     $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
                     do l = 0, p
                         do k = 0, n
@@ -671,9 +648,6 @@ contains
                         end do
                     end do
                     $:END_GPU_PARALLEL_LOOP()
-#if defined(MFC_DACE) && !defined(MFC_DACE_PACK_OFF)
-                    end if
-#endif
 
                     if (chem_diff_comm) then
                         $:GPU_PARALLEL_LOOP(collapse=3,private='[r]')

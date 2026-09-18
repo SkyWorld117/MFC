@@ -60,6 +60,10 @@ set(MFC_DACE_LIBS
 # libs can only join a build configured for buff=3 -- hence an option rather than another entry
 # in MFC_DACE_LIBS, which every buff=4/6 build would then also need.
 option(MFC_DACE_WENO3 "Also link the fused WENO3 kernel family (requires MFC_DACE_BAKED_BUFF=3)" OFF)
+if (MFC_DACE_WENO3 AND NOT MFC_DACE)
+    message(FATAL_ERROR "MFC_DACE_WENO3=ON requires MFC_DACE=ON: the fused WENO3 family is part of "
+                        "the DaCe backend, not an independent link set.")
+endif()
 if (MFC_DACE_WENO3)
     list(APPEND MFC_DACE_LIBS
         "${CMAKE_CURRENT_SOURCE_DIR}/../pipeline/mfc_dace/libmfc_dace_fused3_x.so"
@@ -73,6 +77,10 @@ endif()
 # shim's pack).  Each bake records the buff it used in <lib>.baked_buff; refuse a build whose
 # MFC_DACE_BAKED_BUFF disagrees, since the Fortran shims pack with the runtime buff_size and
 # a mismatch silently shifts the data (measured: a mixed pair displaced a sweep by (-4,-2,-2)).
+# Gated on MFC_DACE: with the backend off there are no libraries to link and the invariant does
+# not apply -- and an unconditional check made `MFC_DACE=OFF` fail to configure at all, which is
+# the one configuration that has to stay a pristine upstream build.
+if (MFC_DACE)
 foreach (_dace_lib ${MFC_DACE_LIBS})
     string(REPLACE "libmfc_dace_" "mfc_dace_" _dace_marker "${_dace_lib}")
     string(REPLACE ".so" ".baked_buff" _dace_marker "${_dace_marker}")
@@ -88,6 +96,7 @@ foreach (_dace_lib ${MFC_DACE_LIBS})
         endif()
     endif()
 endforeach()
+endif()
 option(MFC_OpenMP        "Build with OpenMP"                                 OFF)
 option(MFC_GCov          "Build with GCov"                                   OFF)
 option(MFC_Unified       "Build with unified CPU & GPU memory (GH-200 only)" OFF)
@@ -200,6 +209,10 @@ include(cmake/Fypp.cmake)
 # no configure-time execute_process bootstrap.
 # NOTE: _mfc_gen_files_* lists must exist before HANDLE_SOURCES is called.
 include(cmake/ParamsCodegen.cmake)
+
+# MFC_DACE's dispatch patch and the build-dir mirror of the sources it is applied to.  Included
+# here, immediately before HANDLE_SOURCES, so the mirror is in place before fypp runs.
+include(cmake/DacePatch.cmake)
 
 HANDLE_SOURCES(pre_process ON)
 HANDLE_SOURCES(simulation ON)

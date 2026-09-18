@@ -36,11 +36,6 @@ module m_rhs
     use m_igr
     use m_thinc
     use m_pressure_relaxation
-#if defined(MFC_DACE)
-    !> M3: the fused flux-difference + alpha-advection-source dispatch (off unless
-    !! MFC_DACE_FDIFF_SRC is set, and only inside its case contract).
-    use m_dace_kernels_fdiff_src, only: s_dace_fdiff_src, fdiff_src_dirs, fdiff_src_contract
-#endif
 
     implicit none
 
@@ -222,7 +217,6 @@ contains
                     do l = 1, sys_size
                         @:ALLOCATE(flux_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                    & idwbuff(3)%beg:idwbuff(3)%end))
-                        $:GPU_ENTER_DATA(attach='[flux_n(i)%vf(l)%sf]')
                         @:ALLOCATE(flux_gsrc_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                    & idwbuff(3)%beg:idwbuff(3)%end))
                     end do
@@ -231,7 +225,6 @@ contains
                         do l = eqn_idx%mom%beg, eqn_idx%E
                             @:ALLOCATE(flux_src_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                        & idwbuff(3)%beg:idwbuff(3)%end))
-                            $:GPU_ENTER_DATA(attach='[flux_src_n(i)%vf(l)%sf]')
                         end do
                     end if
 
@@ -248,7 +241,6 @@ contains
                     ! for structural consistency with s_finalize_riemann_solver.
                     @:ALLOCATE(flux_src_n(i)%vf(eqn_idx%adv%beg)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                & idwbuff(3)%beg:idwbuff(3)%end))
-                    $:GPU_ENTER_DATA(attach='[flux_src_n(i)%vf(eqn_idx%adv%beg)%sf]')
 
                     if (adv_src_mode == adv_src_mode_alpha_iface .or. adv_src_mode == adv_src_mode_none) then
                         ! Alpha-interface needs separate per-fluid arrays. HLLD (adv_src_mode_none) allocates for structural
@@ -256,7 +248,6 @@ contains
                         do l = eqn_idx%adv%beg + 1, eqn_idx%adv%end
                             @:ALLOCATE(flux_src_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                        & idwbuff(3)%beg:idwbuff(3)%end))
-                            $:GPU_ENTER_DATA(attach='[flux_src_n(i)%vf(l)%sf]')
                         end do
                     end if
 
@@ -264,7 +255,6 @@ contains
                         do l = eqn_idx%species%beg, eqn_idx%species%end
                             @:ALLOCATE(flux_src_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                        & idwbuff(3)%beg:idwbuff(3)%end))
-                            $:GPU_ENTER_DATA(attach='[flux_src_n(i)%vf(l)%sf]')
                         end do
                         if (chem_params%diffusion .and. .not. viscous) then
                             @:ALLOCATE(flux_src_n(i)%vf(eqn_idx%E)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
@@ -1120,30 +1110,6 @@ contains
                 call s_cbc(q_prim_vf%vf, flux_n(idir)%vf, flux_src_n_vf%vf, idir, 1, irx, iry, irz)
             end if
 
-            if (fdiff_src_dirs(1) .and. fdiff_src_contract()) then
-                ! The rows cross the C ABI as raw device pointers, so they have to be
-                ! attached: MFC's @:ACC_SETUP_VFs (the macro that would do it) sits entirely
-                ! inside #ifdef _CRAYFTN -- nothing on nvfortran -- and by this point a loop
-                ! that mapped a row has dropped its association.  attach only, never copyin:
-                ! the host copies are stale here, and copyin would push them over the device
-                ! copies the HLLC/sweeps kernel just wrote.
-                $:GPU_ENTER_DATA(attach='[flux_n(1)%vf(1)%sf, flux_n(1)%vf(2)%sf, flux_n(1)%vf(3)%sf, flux_n(1)%vf(4)%sf, flux_n(1)%vf(5)%sf, flux_n(1)%vf(6)%sf, flux_n(1)%vf(7)%sf, flux_n(1)%vf(8)%sf, flux_src_n(1)%vf(eqn_idx%adv%beg)%sf]')
-                !> M3: the fused flux difference + alpha advection source in one kernel per
-                !! direction (the cuf_sweeps shape).  The CBC face surgery above has already
-                !! run, so the kernel reads exactly the fluxes the stock loops would.
-                call s_dace_fdiff_src(flux_n(1)%vf(1)%sf(0:, 0:, 0:), flux_n(1)%vf(2)%sf(0:, 0:, 0:), &
-                                      & flux_n(1)%vf(3)%sf(0:, 0:, 0:), flux_n(1)%vf(4)%sf(0:, 0:, 0:), &
-                                      & flux_n(1)%vf(5)%sf(0:, 0:, 0:), flux_n(1)%vf(6)%sf(0:, 0:, 0:), &
-                                      & flux_n(1)%vf(7)%sf(0:, 0:, 0:), flux_n(1)%vf(8)%sf(0:, 0:, 0:), &
-                                      & flux_src_n(1)%vf(eqn_idx%adv%beg)%sf(0:, 0:, 0:), &
-                                      & q_cons_vf%vf(eqn_idx%adv%beg)%sf(0:, 0:, 0:), &
-                                      & q_cons_vf%vf(eqn_idx%adv%end)%sf(0:, 0:, 0:), &
-                                      & rhs_vf(1)%sf(0:, 0:, 0:), rhs_vf(2)%sf(0:, 0:, 0:), rhs_vf(3)%sf(0:, 0:, 0:), &
-                                      & rhs_vf(4)%sf(0:, 0:, 0:), rhs_vf(5)%sf(0:, 0:, 0:), rhs_vf(6)%sf(0:, 0:, 0:), &
-                                      & rhs_vf(7)%sf(0:, 0:, 0:), rhs_vf(8)%sf(0:, 0:, 0:), &
-                                      & dx(0:), 0, m, 0, n, 0, p, 1, &
-                                      & size(flux_n(1)%vf(1)%sf, 1), size(rhs_vf(1)%sf, 1), size(dx, 1))
-            else
             if (hypo_nc_mode /= hypo_nc_mode_dual_pass) then
                 $:GPU_PARALLEL_LOOP(collapse=4,private='[j, k_loop, l_loop, q_loop, inv_ds, flux_face1, flux_face2]')
                 do j = 1, sys_size
@@ -1212,7 +1178,6 @@ contains
             end if
 
             call s_add_directional_advection_source_terms(idir, rhs_vf, q_cons_vf, q_prim_vf, flux_src_n_vf, Kterm)
-            end if
         case (2)  ! y-direction
             if (bc_y%beg <= BC_CHAR_SLIP_WALL .and. bc_y%beg >= BC_CHAR_SUP_OUTFLOW) then
                 call s_cbc(q_prim_vf%vf, flux_n(idir)%vf, flux_src_n_vf%vf, idir, -1, irx, iry, irz)
@@ -1221,27 +1186,6 @@ contains
                 call s_cbc(q_prim_vf%vf, flux_n(idir)%vf, flux_src_n_vf%vf, idir, 1, irx, iry, irz)
             end if
 
-            if (fdiff_src_dirs(2) .and. fdiff_src_contract()) then
-                ! The rows cross the C ABI as raw device pointers, so they have to be
-                ! attached: MFC's @:ACC_SETUP_VFs (the macro that would do it) sits entirely
-                ! inside #ifdef _CRAYFTN -- nothing on nvfortran -- and by this point a loop
-                ! that mapped a row has dropped its association.  attach only, never copyin:
-                ! the host copies are stale here, and copyin would push them over the device
-                ! copies the HLLC/sweeps kernel just wrote.
-                $:GPU_ENTER_DATA(attach='[flux_n(2)%vf(1)%sf, flux_n(2)%vf(2)%sf, flux_n(2)%vf(3)%sf, flux_n(2)%vf(4)%sf, flux_n(2)%vf(5)%sf, flux_n(2)%vf(6)%sf, flux_n(2)%vf(7)%sf, flux_n(2)%vf(8)%sf, flux_src_n(2)%vf(eqn_idx%adv%beg)%sf]')
-                call s_dace_fdiff_src(flux_n(2)%vf(1)%sf(0:, 0:, 0:), flux_n(2)%vf(2)%sf(0:, 0:, 0:), &
-                                      & flux_n(2)%vf(3)%sf(0:, 0:, 0:), flux_n(2)%vf(4)%sf(0:, 0:, 0:), &
-                                      & flux_n(2)%vf(5)%sf(0:, 0:, 0:), flux_n(2)%vf(6)%sf(0:, 0:, 0:), &
-                                      & flux_n(2)%vf(7)%sf(0:, 0:, 0:), flux_n(2)%vf(8)%sf(0:, 0:, 0:), &
-                                      & flux_src_n(2)%vf(eqn_idx%adv%beg)%sf(0:, 0:, 0:), &
-                                      & q_cons_vf%vf(eqn_idx%adv%beg)%sf(0:, 0:, 0:), &
-                                      & q_cons_vf%vf(eqn_idx%adv%end)%sf(0:, 0:, 0:), &
-                                      & rhs_vf(1)%sf(0:, 0:, 0:), rhs_vf(2)%sf(0:, 0:, 0:), rhs_vf(3)%sf(0:, 0:, 0:), &
-                                      & rhs_vf(4)%sf(0:, 0:, 0:), rhs_vf(5)%sf(0:, 0:, 0:), rhs_vf(6)%sf(0:, 0:, 0:), &
-                                      & rhs_vf(7)%sf(0:, 0:, 0:), rhs_vf(8)%sf(0:, 0:, 0:), &
-                                      & dy(0:), 0, m, 0, n, 0, p, 2, &
-                                      & size(flux_n(2)%vf(1)%sf, 1), size(rhs_vf(1)%sf, 1), size(dy, 1))
-            else
             if (hypo_nc_mode /= hypo_nc_mode_dual_pass) then
                 $:GPU_PARALLEL_LOOP(collapse=4,private='[j, k, l, q, inv_ds, flux_face1, flux_face2]')
                 do j = 1, sys_size
@@ -1366,7 +1310,6 @@ contains
             end if
 
             call s_add_directional_advection_source_terms(idir, rhs_vf, q_cons_vf, q_prim_vf, flux_src_n_vf, Kterm)
-            end if
         case (3)  ! z-direction
             if (bc_z%beg <= BC_CHAR_SLIP_WALL .and. bc_z%beg >= BC_CHAR_SUP_OUTFLOW) then
                 call s_cbc(q_prim_vf%vf, flux_n(idir)%vf, flux_src_n_vf%vf, idir, -1, irx, iry, irz)
@@ -1405,27 +1348,6 @@ contains
                 end do
                 $:END_GPU_PARALLEL_LOOP()
             else  ! Cartesian Coordinates
-            if (fdiff_src_dirs(3) .and. fdiff_src_contract()) then
-                ! The rows cross the C ABI as raw device pointers, so they have to be
-                ! attached: MFC's @:ACC_SETUP_VFs (the macro that would do it) sits entirely
-                ! inside #ifdef _CRAYFTN -- nothing on nvfortran -- and by this point a loop
-                ! that mapped a row has dropped its association.  attach only, never copyin:
-                ! the host copies are stale here, and copyin would push them over the device
-                ! copies the HLLC/sweeps kernel just wrote.
-                $:GPU_ENTER_DATA(attach='[flux_n(3)%vf(1)%sf, flux_n(3)%vf(2)%sf, flux_n(3)%vf(3)%sf, flux_n(3)%vf(4)%sf, flux_n(3)%vf(5)%sf, flux_n(3)%vf(6)%sf, flux_n(3)%vf(7)%sf, flux_n(3)%vf(8)%sf, flux_src_n(3)%vf(eqn_idx%adv%beg)%sf]')
-                    call s_dace_fdiff_src(flux_n(3)%vf(1)%sf(0:, 0:, 0:), flux_n(3)%vf(2)%sf(0:, 0:, 0:), &
-                                          & flux_n(3)%vf(3)%sf(0:, 0:, 0:), flux_n(3)%vf(4)%sf(0:, 0:, 0:), &
-                                          & flux_n(3)%vf(5)%sf(0:, 0:, 0:), flux_n(3)%vf(6)%sf(0:, 0:, 0:), &
-                                          & flux_n(3)%vf(7)%sf(0:, 0:, 0:), flux_n(3)%vf(8)%sf(0:, 0:, 0:), &
-                                          & flux_src_n(3)%vf(eqn_idx%adv%beg)%sf(0:, 0:, 0:), &
-                                          & q_cons_vf%vf(eqn_idx%adv%beg)%sf(0:, 0:, 0:), &
-                                          & q_cons_vf%vf(eqn_idx%adv%end)%sf(0:, 0:, 0:), &
-                                          & rhs_vf(1)%sf(0:, 0:, 0:), rhs_vf(2)%sf(0:, 0:, 0:), rhs_vf(3)%sf(0:, 0:, 0:), &
-                                          & rhs_vf(4)%sf(0:, 0:, 0:), rhs_vf(5)%sf(0:, 0:, 0:), rhs_vf(6)%sf(0:, 0:, 0:), &
-                                          & rhs_vf(7)%sf(0:, 0:, 0:), rhs_vf(8)%sf(0:, 0:, 0:), &
-                                          & dz(0:), 0, m, 0, n, 0, p, 3, &
-                                      & size(flux_n(3)%vf(1)%sf, 1), size(rhs_vf(1)%sf, 1), size(dz, 1))
-                else
                 if (hypo_nc_mode /= hypo_nc_mode_dual_pass) then
                     $:GPU_PARALLEL_LOOP(collapse=4,private='[j, k, l, q, inv_ds, flux_face1, flux_face2]')
                     do j = 1, sys_size
@@ -1495,7 +1417,6 @@ contains
             end if
 
             call s_add_directional_advection_source_terms(idir, rhs_vf, q_cons_vf, q_prim_vf, flux_src_n_vf, Kterm)
-                end if
         end select
 
     contains

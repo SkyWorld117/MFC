@@ -327,11 +327,6 @@ contains
         end if
 
         do i = 1, sys_size
-            ! The cons fields are declare-create'd (device-resident in the
-            ! OpenACC build): without this update the text writer dumps the
-            ! STALE HOST copy (= the initial state) — every q_cons_vf*.dat
-            ! from this writer was the IC, not the evolved state.
-            $:GPU_UPDATE(host='[q_cons_vf(i)%sf(:, :, :)]')
             write (file_path, '(A,I0,A)') trim(t_step_dir) // '/q_cons_vf', i, '.dat'
 
             open (2, FILE=trim(file_path), form='unformatted', STATUS='new')

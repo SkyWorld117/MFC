@@ -15,36 +15,6 @@ module m_weno
     use m_nvtx
 
     private; public :: s_initialize_weno_module, s_finalize_weno_module, s_weno, s_pack_weno_input_arr
-    !> The fused sweep dispatch (M1, MFC_DACE_FUSED) reconstructs both Riemann
-    !! states inside the HLLC kernel, so it reads the primitive buffer and the
-    !! WENO coefficient tables in place.  They live here, and the DaCe WENO
-    !! dispatch receives them as arguments from inside this module -- the fused
-    !! one is called from m_riemann_solver_hllc, so they have to be public.
-    public :: v_rs_weno, poly_coef_cbL_x, poly_coef_cbR_x, d_cbL_x, d_cbR_x, &
-              poly_coef_cbL_y, poly_coef_cbR_y, d_cbL_y, d_cbR_y, &
-              poly_coef_cbL_z, poly_coef_cbR_z, d_cbL_z, d_cbR_z
-    !> M4 (WENO3): the smoothness-indicator coefficients.  WENO5 computes beta analytically inside the
-    !! kernel and never needs these; the WENO3 body reads them from a table, so the WENO3 fused
-    !! dispatch needs them here too.  Already device-resident (GPU_DECLARE + the GPU_UPDATE in
-    !! s_initialize_weno), so the shim resolves them with acc_deviceptr like the other tables.
-    public :: beta_coef_x, beta_coef_y, beta_coef_z
-
-    !> M1 fused sweep: which directions this step's reconstruction was skipped for
-    !! because the fused HLLC kernel does it (see the dispatch in s_weno).  Read by
-    !! m_riemann_solver_hllc, so both sites act on one verdict.
-    logical, dimension(3) :: dace_fused_weno_active = [.false., .false., .false.]
-    public :: dace_fused_weno_active
-
-    !> M4 fused WENO3: the same verdict for the weno_order == 3 family, which is a separate
-    !! library set (a library serves one weno_order) and therefore only exists in a build
-    !! configured for it.  Outside such a build this is a constant .false., so the guard sites
-    !! below can name it unconditionally without dragging the shim into the link.
-#if defined(MFC_DACE_WENO3)
-    logical, dimension(3) :: dace_fused3_weno_active = [.false., .false., .false.]
-#else
-    logical, parameter, dimension(3) :: dace_fused3_weno_active = [.false., .false., .false.]
-#endif
-    public :: dace_fused3_weno_active
 
     !> @name The cell-average variables that will be WENO-reconstructed unpacked into an array for performance
     !> @{
@@ -942,15 +912,6 @@ contains
     !> Perform WENO reconstruction of left and right cell-boundary values from cell-averaged variables
     subroutine s_weno(v_vf, vL_rs_vf_x, vR_rs_vf_x, weno_dir, is1_weno_d, is2_weno_d, is3_weno_d)
 
-#if defined(MFC_DACE)
-        use m_dace_kernels_weno, only: s_dace_weno_x, s_dace_weno_y, &
-                                       & s_dace_weno_z, weno_dace_contract, &
-                                       & weno_dace_mode, weno_dace_dirs
-        use m_dace_kernels_fused, only: dace_fused_contract, dace_fused_dirs
-#if defined(MFC_DACE_WENO3)
-        use m_dace_kernels_fused3, only: dace_fused3_contract, dace_fused3_dirs
-#endif
-#endif
         type(scalar_field), dimension(1:), intent(in)                                          :: v_vf
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vL_rs_vf_x
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vR_rs_vf_x
@@ -1032,19 +993,6 @@ contains
         if (weno_order /= 1) then
             call s_pack_weno_input_arr(v_vf)
         end if
-
-#if defined(MFC_DACE) && defined(MFC_DACE_WENO3)
-        !> M4 fused WENO3: the verdict for the weno_order == 3 family.  It is order-generic, so it
-        !! is set HERE -- before the order split -- for whichever direction this call handles.
-        !! M1's verdict lives inside the weno_order == 5 branch; putting the WENO3 one there made it
-        !! unreachable for a WENO3 case (and the gate then passed vacuously, which is how it was
-        !! caught).  No `weno_dace_contract()` clause: that requires weno_order == 5 by design.
-        if (weno_dir >= 1 .and. weno_dir <= 3) then
-            dace_fused3_weno_active(weno_dir) = &
-                & dace_fused3_dirs(weno_dir) .and. dace_fused3_contract() .and. &
-                & v_size == 8 .and. uniform_grid(weno_dir)
-        end if
-#endif
 
         if (weno_order == 3) then
             #:for WENO_DIR, XYZ, STENCIL_VAR, COORDS, X_BND, Y_BND, Z_BND in &
@@ -1145,51 +1093,6 @@ contains
                     #:set SV = STENCIL_VAR
                     #:set SF = lambda offs: COORDS.format(STENCIL_IDX = SV + offs)
                     if (weno_dir == ${WENO_DIR}$) then
-#if defined(MFC_DACE)
-                        !> M1 fused sweep: when the fused kernel will do this direction's
-                        !! reconstruction inside the HLLC solve, the reconstruction here is
-                        !! skipped entirely -- its vL/vR outputs have no consumer on that
-                        !! path.  The decision is published (not re-derived) because
-                        !! m_riemann_solver_hllc must reach the SAME verdict: a WENO that
-                        !! skipped while the fused call did not happen would leave the
-                        !! Riemann states stale.  v_size (this module's private state) and
-                        !! uniform_grid are part of it for that reason.
-                        dace_fused_weno_active(${WENO_DIR}$) = &
-                            & dace_fused_dirs(${WENO_DIR}$) .and. dace_fused_contract() .and. &
-                            & weno_dace_contract() .and. v_size == 8 .and. &
-                            & uniform_grid(${WENO_DIR}$)
-#endif
-#if defined(MFC_DACE) && !defined(MFC_DACE_WENO_OFF)
-                        if (.not. dace_fused_weno_active(${WENO_DIR}$) .and. &
-                            & .not. dace_fused3_weno_active(${WENO_DIR}$) .and. &
-                            & weno_dace_dirs(${WENO_DIR}$) .and. &
-                            & weno_dace_mode() >= 1 .and. weno_dace_contract() .and. &
-                            & v_size == 8 .and. uniform_grid(${WENO_DIR}$)) then
-                            #:if WENO_DIR == 1
-                            call s_dace_weno_x(v_rs_weno, poly_coef_cbL_x, poly_coef_cbR_x, &
-                                               & d_cbL_x, d_cbR_x, vL_rs_vf_x, vR_rs_vf_x, &
-                                               & is1_weno%beg, is1_weno%end, is2_weno%beg, &
-                                               & is2_weno%end, is3_weno%beg, is3_weno%end)
-                            #:elif WENO_DIR == 2
-                            call s_dace_weno_y(v_rs_weno, poly_coef_cbL_y, poly_coef_cbR_y, &
-                                               & d_cbL_y, d_cbR_y, vL_rs_vf_x, vR_rs_vf_x, &
-                                               & is2_weno%beg, is2_weno%end, is1_weno%beg, &
-                                               & is1_weno%end, is3_weno%beg, is3_weno%end)
-                            #:else
-                            call s_dace_weno_z(v_rs_weno, poly_coef_cbL_z, poly_coef_cbR_z, &
-                                               & d_cbL_z, d_cbR_z, vL_rs_vf_x, vR_rs_vf_x, &
-                                               & is3_weno%beg, is3_weno%end, is2_weno%beg, &
-                                               & is2_weno%end, is1_weno%beg, is1_weno%end)
-                            #:endif
-                        end if
-                        if (.not. dace_fused_weno_active(${WENO_DIR}$) .and. &
-                            & .not. dace_fused3_weno_active(${WENO_DIR}$) .and. &
-                            & .not. (weno_dace_dirs(${WENO_DIR}$) .and. &
-                                   & weno_dace_mode() == 1 .and. weno_dace_contract() .and. &
-                                   & v_size == 8 .and. uniform_grid(${WENO_DIR}$))) then
-#else
-                        if (.true.) then
-#endif
                         $:GPU_PARALLEL_LOOP(collapse=3,private='[dvd, poly, beta, alpha, omega, tau, delta, q, vp0, vm1, vm2, &
                                             & vp1, vp2]')
                         do l = ${Z_BND}$%beg, ${Z_BND}$%end
@@ -1332,7 +1235,6 @@ contains
                             end do
                         end do
                         $:END_GPU_PARALLEL_LOOP()
-                        end if
 
                         if (mp_weno) then
                             call s_preserve_monotonicity(v_rs_weno, vL_rs_vf_x, vR_rs_vf_x, weno_dir)

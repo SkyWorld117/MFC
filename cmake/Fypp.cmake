@@ -90,6 +90,16 @@ macro(HANDLE_SOURCES target useCommon)
         list(APPEND ${target}_FPPs ${common_FPPs})
     endif()
 
+    # MFC_DACE=OFF must be a PRISTINE upstream build, and that includes the source list: the DaCe
+    # shim sources are wrapped in `#if defined(MFC_DACE)`, so with the flag off they preprocess to
+    # NOTHING -- and a source that produces no module then fails later in the build's module-copy
+    # step ("Error copying Fortran module ..."), which reads like a compiler problem and is not.
+    # Excluding them here is what makes the off configuration a plain upstream tree.
+    if (NOT MFC_DACE)
+        list(FILTER ${target}_FPPs EXCLUDE REGEX ".*/m_dace_kernels.*\.fpp$")
+        list(FILTER ${target}_FPPs EXCLUDE REGEX ".*/m_dev_mem\.fpp$")
+    endif()
+
     # Gather:
     # *          src/[<target>,common]/include/*.fpp
     # * generated includes from build/include/<target>/ (explicit list, not a GLOB)
@@ -105,7 +115,22 @@ macro(HANDLE_SOURCES target useCommon)
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/fypp/${target}")
     foreach(fpp ${${target}_FPPs})
         cmake_path(GET fpp FILENAME fpp_filename)
+        # The OUTPUT name stays keyed on the SOURCE path, never on the mirror: MFCTargets.cmake's
+        # -Mnoinline property and CMakeLists' Cray -Oipa0 files both match
+        # "${CMAKE_BINARY_DIR}/fypp/<target>/<name>.fpp.f90", so that path must not move.
         set(f90 "${CMAKE_BINARY_DIR}/fypp/${target}/${fpp_filename}.f90")
+
+        # MFC_DACE: preprocess the PATCHED copy for the files the dispatch patch touches, and the
+        # pristine source for every other file.  The mirror is produced by cmake/DacePatch.cmake.
+        set(_fpp_in  "${fpp}")
+        set(_fpp_dep "")
+        if (MFC_DACE)
+            file(RELATIVE_PATH _fpp_rel "${CMAKE_SOURCE_DIR}" "${fpp}")
+            if (_fpp_rel IN_LIST MFC_DACE_PATCHED_FILES)
+                set(_fpp_in  "${MFC_DACE_MIRROR}/${_fpp_rel}")
+                set(_fpp_dep "${MFC_DACE_PATCH_STAMP}")
+            endif()
+        endif()
 
         add_custom_command(
             OUTPUT   ${f90}
@@ -125,8 +150,8 @@ macro(HANDLE_SOURCES target useCommon)
 								 --line-length=999
 		 						 --line-numbering-mode=nocontlines
                                  ${FYPP_GCOV_OPTS}
-                                 "${fpp}" "${f90}"
-            DEPENDS  "${fpp};${${target}_incs}"
+                                 "${_fpp_in}" "${f90}"
+            DEPENDS  "${fpp};${${target}_incs};${_fpp_dep}"
             COMMENT  "Preprocessing (Fypp) ${fpp_filename}"
             VERBATIM
         )

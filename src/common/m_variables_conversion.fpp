@@ -459,9 +459,6 @@ contains
     subroutine s_convert_conservative_to_primitive_variables(qK_cons_vf, q_T_sf, qK_prim_vf, ibounds)
 
         use m_global_parameters_common, only: shear_indices  ! Performance fix with AMDFlang
-#if defined(MFC_DACE)
-    use m_dace_kernels_conv, only: s_dace_convert
-#endif
 
         type(scalar_field), dimension(sys_size), intent(in)    :: qK_cons_vf
         type(scalar_field), intent(inout)                      :: q_T_sf
@@ -496,15 +493,6 @@ contains
         real(wp)               :: f, dGa_dW, dp_dW, df_dW  !< Functions within Newton-Raphson iteration
         integer                :: iter                     !< Newton-Raphson iteration counter
 
-        #if defined(MFC_DACE) && !defined(MFC_DACE_CONV_OFF)
-        ! P2/T2.3: the DaCe-compiled conversion kernel (device-resident,
-        ! casopt-baked 5-eq/2-fluid/3-D).  One launch replaces the
-        ! collapsed(3) per-cell OpenACC loop.  The shim stages
-        ! DEVICE-RESIDENT: it transposes the declare-created device fields
-        ! straight into the kernel's flat staging buffers with an acc
-        ! kernel — no host staging, no acc update here.
-        call s_dace_convert(qK_cons_vf, q_T_sf, qK_prim_vf, ibounds)
-        #else
         $:GPU_PARALLEL_LOOP(collapse=3, private='[alpha_K, alpha_rho_K, Re_K, nRtmp, rho_K, gamma_K, pi_inf_K, qv_K, dyn_pres_K, &
                             & rhoYks, B, pres, vftmp, nbub_sc, G_K, solid_partial_density, T, pres_mag, Ga, B2, m2, S, W, dW, E, &
                             & D, f, dGa_dW, dp_dW, df_dW, iter]')
@@ -768,7 +756,6 @@ contains
             end do
         end do
         $:END_GPU_PARALLEL_LOOP()
-        #endif
 
     end subroutine s_convert_conservative_to_primitive_variables
 

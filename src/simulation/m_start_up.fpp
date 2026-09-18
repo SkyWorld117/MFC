@@ -10,8 +10,6 @@ module m_start_up
 
     use m_derived_types
     use m_global_parameters
-    use, intrinsic :: iso_c_binding, only: c_loc
-    use m_dev_mem, only: s_dev_copy_in
     use m_mpi_proxy
     use m_mpi_common
     use m_variables_conversion
@@ -1054,25 +1052,8 @@ contains
         integer :: i
 
         if (.not. down_sample) then
-            ! P2.5: acc update device on the two-level-nested allocatable
-            ! component resolves to a DIFFERENT device buffer than the
-            ! compute regions' descriptor access on NVHPC 25.7 (dev-MFC hit
-            ! the same present-table corruption class) — the IC push goes
-            ! through an explicit cudaMemcpy with the device address from
-            ! host_data use_device, the same pattern as the MPI halo path.
             do i = 1, sys_size
-                block
-                    real(stp), pointer :: fp(:,:,:)
-                    type(c_ptr) :: hptr
-                    integer(c_size_t) :: nbytes
-                    fp => q_cons_ts(1)%vf(i)%sf
-                    hptr = c_loc(fp(lbound(fp, 1), lbound(fp, 2), lbound(fp, 3)))
-                    nbytes = product(int(shape(fp), c_size_t)) * &
-                             & int(storage_size(fp(lbound(fp, 1), lbound(fp, 2), lbound(fp, 3)))/8, c_size_t)
-                    !$acc host_data use_device(fp)
-                    call s_dev_copy_in(fp, hptr, nbytes, 'q_cons_ts(1)')
-                    !$acc end host_data
-                end block
+                $:GPU_UPDATE(device='[q_cons_ts(1)%vf(i)%sf]')
             end do
         end if
 

@@ -20,7 +20,7 @@ module m_riemann_state
     !! direct evaluation of source terms, by using the left and right states given in qK_prim_rs_vf, dqK_prim_ds_vf where ds = dx,
     !! dy or dz.
     !> @{
-    real(wp), allocatable, target, dimension(:,:,:,:), public :: flux_rsx_vf, flux_src_rsx_vf
+    real(wp), allocatable, dimension(:,:,:,:) :: flux_rsx_vf, flux_src_rsx_vf
     $:GPU_DECLARE(create='[flux_rsx_vf, flux_src_rsx_vf]')
     !> @}
 
@@ -48,7 +48,7 @@ module m_riemann_state
 
     ! Cell-boundary velocity from Riemann solution; used for source flux
 
-    real(wp), allocatable, target, dimension(:,:,:,:), public :: vel_src_rsx_vf
+    real(wp), allocatable, dimension(:,:,:,:) :: vel_src_rsx_vf
     $:GPU_DECLARE(create='[vel_src_rsx_vf]')
 
     real(wp), allocatable, dimension(:,:,:,:) :: mom_sp_rsx_vf
@@ -273,10 +273,6 @@ contains
     subroutine s_compute_viscous_source_flux(velL_vf, dvelL_dx_vf, dvelL_dy_vf, dvelL_dz_vf, velR_vf, dvelR_dx_vf, dvelR_dy_vf, &
         & dvelR_dz_vf, flux_src_vf, q_prim_vf, norm_dir, ix, iy, iz)
 
-#if defined(MFC_DACE)
-        use m_dace_kernels_vsrc, only: s_dace_vsrc_x, s_dace_vsrc_y, s_dace_vsrc_z, vsrc_dace_contract, vsrc_dace_mode, vsrc_dace_yz_enabled
-#endif
-
         type(scalar_field), dimension(num_vels), intent(in) :: velL_vf, velR_vf, dvelL_dx_vf, dvelR_dx_vf, dvelL_dy_vf, &
              & dvelR_dy_vf, dvelL_dz_vf, dvelR_dz_vf
 
@@ -289,66 +285,8 @@ contains
             call s_compute_cylindrical_viscous_source_flux(velL_vf, dvelL_dx_vf, dvelL_dy_vf, dvelL_dz_vf, velR_vf, dvelR_dx_vf, &
                 & dvelR_dy_vf, dvelR_dz_vf, flux_src_vf, q_prim_vf, norm_dir, ix, iy, iz)
         else
-#if defined(MFC_DACE) && !defined(MFC_DACE_VSRC_OFF)
-            if (norm_dir == 1 .and. vsrc_dace_mode() == 1 .and. vsrc_dace_contract()) then
-                call s_dace_vsrc_x(dvelL_dx_vf(1)%sf, dvelL_dx_vf(2)%sf, &
-                                   & dvelL_dx_vf(3)%sf, &
-                                   & dvelL_dy_vf(1)%sf, dvelL_dy_vf(2)%sf, &
-                                   & dvelL_dy_vf(3)%sf, &
-                                   & dvelL_dz_vf(1)%sf, dvelL_dz_vf(2)%sf, &
-                                   & dvelL_dz_vf(3)%sf, &
-                                   & dvelR_dx_vf(1)%sf, dvelR_dx_vf(2)%sf, &
-                                   & dvelR_dx_vf(3)%sf, &
-                                   & dvelR_dy_vf(1)%sf, dvelR_dy_vf(2)%sf, &
-                                   & dvelR_dy_vf(3)%sf, &
-                                   & dvelR_dz_vf(1)%sf, dvelR_dz_vf(2)%sf, &
-                                   & dvelR_dz_vf(3)%sf, &
-                                   & flux_src_vf(eqn_idx%mom%beg)%sf, flux_src_vf(eqn_idx%mom%beg+1)%sf, &
-                                   & flux_src_vf(eqn_idx%mom%beg+2)%sf, flux_src_vf(eqn_idx%E)%sf, &
-                                   & Re_avg_rsx_vf, vel_src_rsx_vf, &
-                                   & ix%beg, ix%end, iy%beg, iy%end, iz%beg, iz%end)
-            else if (norm_dir == 2 .and. vsrc_dace_mode() == 1 .and. vsrc_dace_contract() .and. vsrc_dace_yz_enabled()) then
-                call s_dace_vsrc_y(dvelL_dx_vf(1)%sf, dvelL_dx_vf(2)%sf, &
-                                   & dvelL_dx_vf(3)%sf, &
-                                   & dvelL_dy_vf(1)%sf, dvelL_dy_vf(2)%sf, &
-                                   & dvelL_dy_vf(3)%sf, &
-                                   & dvelL_dz_vf(1)%sf, dvelL_dz_vf(2)%sf, &
-                                   & dvelL_dz_vf(3)%sf, &
-                                   & dvelR_dx_vf(1)%sf, dvelR_dx_vf(2)%sf, &
-                                   & dvelR_dx_vf(3)%sf, &
-                                   & dvelR_dy_vf(1)%sf, dvelR_dy_vf(2)%sf, &
-                                   & dvelR_dy_vf(3)%sf, &
-                                   & dvelR_dz_vf(1)%sf, dvelR_dz_vf(2)%sf, &
-                                   & dvelR_dz_vf(3)%sf, &
-                                   & flux_src_vf(eqn_idx%mom%beg)%sf, flux_src_vf(eqn_idx%mom%beg+1)%sf, &
-                                   & flux_src_vf(eqn_idx%mom%beg+2)%sf, flux_src_vf(eqn_idx%E)%sf, &
-                                   & Re_avg_rsx_vf, vel_src_rsx_vf, &
-                                   & ix%beg, ix%end, iy%beg, iy%end, iz%beg, iz%end)
-            else if (norm_dir == 3 .and. vsrc_dace_mode() == 1 .and. vsrc_dace_contract() .and. vsrc_dace_yz_enabled()) then
-                call s_dace_vsrc_z(dvelL_dx_vf(1)%sf, dvelL_dx_vf(2)%sf, &
-                                   & dvelL_dx_vf(3)%sf, &
-                                   & dvelL_dy_vf(1)%sf, dvelL_dy_vf(2)%sf, &
-                                   & dvelL_dy_vf(3)%sf, &
-                                   & dvelL_dz_vf(1)%sf, dvelL_dz_vf(2)%sf, &
-                                   & dvelL_dz_vf(3)%sf, &
-                                   & dvelR_dx_vf(1)%sf, dvelR_dx_vf(2)%sf, &
-                                   & dvelR_dx_vf(3)%sf, &
-                                   & dvelR_dy_vf(1)%sf, dvelR_dy_vf(2)%sf, &
-                                   & dvelR_dy_vf(3)%sf, &
-                                   & dvelR_dz_vf(1)%sf, dvelR_dz_vf(2)%sf, &
-                                   & dvelR_dz_vf(3)%sf, &
-                                   & flux_src_vf(eqn_idx%mom%beg)%sf, flux_src_vf(eqn_idx%mom%beg+1)%sf, &
-                                   & flux_src_vf(eqn_idx%mom%beg+2)%sf, flux_src_vf(eqn_idx%E)%sf, &
-                                   & Re_avg_rsx_vf, vel_src_rsx_vf, &
-                                   & ix%beg, ix%end, iy%beg, iy%end, iz%beg, iz%end)
-            else
-                call s_compute_cartesian_viscous_source_flux(dvelL_dx_vf, dvelL_dy_vf, dvelL_dz_vf, dvelR_dx_vf, dvelR_dy_vf, &
-                    & dvelR_dz_vf, flux_src_vf, q_prim_vf, norm_dir)
-            end if
-#else
             call s_compute_cartesian_viscous_source_flux(dvelL_dx_vf, dvelL_dy_vf, dvelL_dz_vf, dvelR_dx_vf, dvelR_dy_vf, &
                 & dvelR_dz_vf, flux_src_vf, q_prim_vf, norm_dir)
-#endif
         end if
 
     end subroutine s_compute_viscous_source_flux
