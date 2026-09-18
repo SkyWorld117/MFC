@@ -1,159 +1,329 @@
-diff --git a/src/common/m_boundary_common.fpp b/src/common/m_boundary_common.fpp
-index 2f86c027..1810b250 100644
---- a/src/common/m_boundary_common.fpp
-+++ b/src/common/m_boundary_common.fpp
-@@ -119,6 +119,10 @@ contains
-     !! the per-cell BC routines over the boundary face.
-     impure subroutine s_populate_bc_direction(bc_dir, bc_loc, bc_bounds, bc_type_edge, q_prim_vf, pb_in, mv_in, q_T_sf)
- 
-+#if defined(MFC_DACE)
-+        use m_dace_kernels_periodic, only: s_dace_periodic, periodic_dace_enabled, &
-+                                         & periodic_dace_contract
-+#endif
-         integer, intent(in) :: bc_dir, bc_loc
-         type(int_bounds_info), intent(in) :: bc_bounds
-         type(integer_field), intent(in) :: bc_type_edge
-@@ -148,6 +152,30 @@ contains
-             k_beg = -buff_size; k_end = m + buff_size; l_beg = -buff_size; l_end = n + buff_size
-         end if
- 
-+#if defined(MFC_DACE)
-+        ! The fused periodic kernel, when the WHOLE edge is BC_PERIODIC: the per-cell select below
-+        ! then always takes the same branch and the loop reduces to s_periodic -- a pure index remap,
-+        ! which is what the DaCe kernel implements (one flattened loop, no BC table).
-+        !
-+        ! The edge's code derives from the face's bc_* scalar, so testing the scalar is the dispatch
-+        ! condition; a case that overrides individual cells of an edge through bc_type_edge would
-+        ! bypass this check and must not use the switch.  `bc_loc` is -1 for %beg.
-+        if (periodic_dace_enabled(bc_dir) .and. periodic_dace_contract()) then
-+            if ((bc_dir == 1 .and. bc_loc == -1 .and. bc_x%beg == BC_PERIODIC) .or. &
-+                & (bc_dir == 1 .and. bc_loc /= -1 .and. bc_x%end == BC_PERIODIC) .or. &
-+                & (bc_dir == 2 .and. bc_loc == -1 .and. bc_y%beg == BC_PERIODIC) .or. &
-+                & (bc_dir == 2 .and. bc_loc /= -1 .and. bc_y%end == BC_PERIODIC) .or. &
-+                & (bc_dir == 3 .and. bc_loc == -1 .and. bc_z%beg == BC_PERIODIC) .or. &
-+                & (bc_dir == 3 .and. bc_loc /= -1 .and. bc_z%end == BC_PERIODIC)) then
-+                call s_dace_periodic(bc_dir, bc_loc, q_prim_vf(1)%sf, q_prim_vf(2)%sf, &
-+                                     & q_prim_vf(3)%sf, q_prim_vf(4)%sf, q_prim_vf(5)%sf, &
-+                                     & q_prim_vf(6)%sf, q_prim_vf(7)%sf, q_prim_vf(8)%sf, &
-+                                     & k_beg, k_end, l_beg, l_end)
-+                return
-+            end if
-+        end if
-+#endif
-+
-         $:GPU_PARALLEL_LOOP(private='[l, k, bc_code]', collapse=2)
-         do l = l_beg, l_end
-             do k = k_beg, k_end
-diff --git a/src/common/m_mpi_common.fpp b/src/common/m_mpi_common.fpp
-index 5530539b..13abd095 100644
---- a/src/common/m_mpi_common.fpp
-+++ b/src/common/m_mpi_common.fpp
-@@ -14,6 +14,9 @@ module m_mpi_common
+--- a/src/simulation/m_viscous.fpp
++++ b/src/simulation/m_viscous.fpp
+@@ -14,6 +14,14 @@
  
      use m_derived_types
      use m_global_parameters
 +#if defined(MFC_DACE)
-+    use m_dace_kernels_pack, only: s_dace_pack_send
++    use m_dace_kernels, only: s_dace_fd_gradient
++    use m_dace_kernels_visc_avg, only: s_dace_visc_avg_x, s_dace_visc_avg_z, &
++        & visc_avg_dir_enabled, visc_avg_contract
++    use m_dace_kernels_visc_family, only: s_dace_visc_avg_d0, s_dace_visc_avg_d2, &
++        & s_dace_visc_grad_d0, s_dace_visc_grad_d1, s_dace_visc_grad_d2, &
++        & visc_family_enabled, visc_family_contract
 +#endif
+     use m_weno
+     use m_muscl
      use m_helper
-     use ieee_arithmetic
-     use m_nvtx
-@@ -636,6 +639,26 @@ contains
-         #:for mpi_dir in [1, 2, 3]
-             if (mpi_dir == ${mpi_dir}$) then
-                 #:if mpi_dir == 1
-+#if defined(MFC_DACE) && !defined(MFC_DACE_PACK_OFF)
-+                    ! P2/T2.3: the DaCe-compiled dir-1 plain halo-pack kernel
-+                    ! (T2.2 TU, buff_size/nVar baked, pack_offset runtime).
-+                    ! The shim unpacks into HOST buff_send; the caller-side
-+                    ! acc update device makes it visible to the
-+                    ! GPU_HOST_DATA(use_device_addr) sendrecv below.  The
-+                    ! chem/qbmm extras and any nVar mismatch keep the OpenACC
-+                    ! loop.  q_comm is declare-create'd (device-resident in
-+                    ! the OpenACC build), so the input stages via acc update
-+                    ! host.
-+                    if (.not. chem_diff_comm .and. .not. qbmm_comm .and. nVar == 8) then
-+                        ! The shim stages DEVICE-RESIDENT: an acc-kernel
-+                        ! transpose packs the declare-created device q_comm
-+                        ! straight into the kernel buffer, and the packed
-+                        ! result lands in the device buff_send via a
-+                        ! device-to-device copy — no host staging, no acc
-+                        ! update here.
-+                        call s_dace_pack_send(q_comm(1:nVar), buff_send, pack_offset)
+@@ -383,6 +391,20 @@
+ 
+             $:GPU_UPDATE(device='[is1_viscous, is2_viscous, is3_viscous]')
+ 
++            #if defined(MFC_DACE)
++            if (visc_family_enabled(1) .and. visc_family_contract()) then
++            call s_dace_visc_grad_d0(x_cc(0:), q_prim_qp%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                 & q_prim_qp%vf(iv%beg + 1)%sf(0:, 0:, 0:), q_prim_qp%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                 & dqL_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                 & dqL_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                 & dqL_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                 & dqR_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                 & dqR_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                 & dqR_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), size(q_prim_qp%vf(iv%beg)%sf, 1), &
++                 & size(q_prim_qp%vf(iv%beg)%sf, 2), is3_viscous%beg, is3_viscous%end, iy%beg, iy%end, &
++                 & is1_viscous%beg, is1_viscous%end, is1_viscous%beg + 1, is1_viscous%end - 1)
++            else
++            #endif
+             $:GPU_PARALLEL_LOOP(collapse=3)
+             do l = is3_viscous%beg, is3_viscous%end
+                 do k = iy%beg, iy%end
+@@ -410,9 +432,27 @@
+                 end do
+             end do
+             $:END_GPU_PARALLEL_LOOP()
++            #if defined(MFC_DACE)
++            end if
++            #endif
+ 
+             if (n > 0) then
+                 #:if not MFC_CASE_OPTIMIZATION or num_dims > 1
++                    #if defined(MFC_DACE)
++                    if (visc_family_enabled(2) .and. visc_family_contract()) then
++                    call s_dace_visc_grad_d1(y_cc(0:), q_prim_qp%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                         & q_prim_qp%vf(iv%beg + 1)%sf(0:, 0:, 0:), q_prim_qp%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                         & dqL_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                         & dqL_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                         & dqL_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                         & dqR_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                         & dqR_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                         & dqR_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), size(q_prim_qp%vf(iv%beg)%sf, 1), &
++                         & size(q_prim_qp%vf(iv%beg)%sf, 2), is3_viscous%beg, is3_viscous%end, is2_viscous%beg, &
++                         & is2_viscous%end, is1_viscous%beg, is1_viscous%end, is2_viscous%beg + 1, &
++                         & is2_viscous%end - 1)
 +                    else
-+#endif
-                     $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
-                     do l = 0, p
-                         do k = 0, n
-@@ -648,6 +671,9 @@ contains
++                    #endif
+                     $:GPU_PARALLEL_LOOP(collapse=3)
+                     do l = is3_viscous%beg, is3_viscous%end
+                         do j = is2_viscous%beg + 1, is2_viscous%end
+@@ -440,7 +480,33 @@
                          end do
                      end do
                      $:END_GPU_PARALLEL_LOOP()
-+#if defined(MFC_DACE) && !defined(MFC_DACE_PACK_OFF)
+-
++                    #if defined(MFC_DACE)
 +                    end if
-+#endif
++                    #endif
++
++                    ! The two level-2 x-gradient face averages, one fused kernel (the TU generator is
++                    ! scripts/visc_avg_tu_gen.py).  They are the pair of the eighteen s_get_viscous
++                    ! loops that share a shape exactly -- same ranges, same stencil on the SECOND
++                    ! storage subscript -- which is why these two fuse and the other sixteen do not.
++                    #if defined(MFC_DACE)
++                    if (visc_avg_dir_enabled(1) .and. visc_avg_contract()) then
++                        call s_dace_visc_avg_x(dqL_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dx_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dx_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dx_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dx_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dx_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dx_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & size(dqL_prim_dx_n(1)%vf(iv%beg)%sf, 1), &
++                             & size(dqL_prim_dx_n(1)%vf(iv%beg)%sf, 2), is1_viscous%beg, is1_viscous%end, &
++                             & is2_viscous%beg, is2_viscous%end, is3_viscous%beg, is3_viscous%end)
++                    else
++                    #endif
+                     $:GPU_PARALLEL_LOOP(collapse=3)
+                     do l = is3_viscous%beg, is3_viscous%end
+                         do j = is2_viscous%beg + 1, is2_viscous%end
+@@ -474,7 +540,29 @@
+                         end do
+                     end do
+                     $:END_GPU_PARALLEL_LOOP()
+-
++                    #if defined(MFC_DACE)
++                    end if
++                    #endif
++
++                    #if defined(MFC_DACE)
++                    if (visc_family_enabled(1) .and. visc_family_contract()) then
++                    call s_dace_visc_avg_d0(dqL_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                         & dqL_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                         & dqL_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                         & dqR_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                         & dqR_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                         & dqR_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                         & dqL_prim_dy_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                         & dqL_prim_dy_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                         & dqL_prim_dy_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                         & dqR_prim_dy_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                         & dqR_prim_dy_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                         & dqR_prim_dy_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                         & size(dqL_prim_dy_n(2)%vf(iv%beg)%sf, 1), size(dqL_prim_dy_n(2)%vf(iv%beg)%sf, 2), &
++                         & is3_viscous%beg, is3_viscous%end, is2_viscous%beg + 1, is2_viscous%end - 1, &
++                         & is1_viscous%beg, is1_viscous%end, is1_viscous%beg + 1, is1_viscous%end - 1)
++                    else
++                    #endif
+                     $:GPU_PARALLEL_LOOP(collapse=3)
+                     do l = is3_viscous%beg, is3_viscous%end
+                         do k = is2_viscous%beg + 1, is2_viscous%end - 1
+@@ -508,10 +596,29 @@
+                         end do
+                     end do
+                     $:END_GPU_PARALLEL_LOOP()
++                    #if defined(MFC_DACE)
++                    end if
++                    #endif
+                 #:endif
  
-                     if (chem_diff_comm) then
-                         $:GPU_PARALLEL_LOOP(collapse=3,private='[r]')
-diff --git a/src/common/m_variables_conversion.fpp b/src/common/m_variables_conversion.fpp
-index 6292c1d5..ea330110 100644
---- a/src/common/m_variables_conversion.fpp
-+++ b/src/common/m_variables_conversion.fpp
-@@ -459,6 +459,9 @@ contains
-     subroutine s_convert_conservative_to_primitive_variables(qK_cons_vf, q_T_sf, qK_prim_vf, ibounds)
- 
-         use m_global_parameters_common, only: shear_indices  ! Performance fix with AMDFlang
-+#if defined(MFC_DACE)
-+    use m_dace_kernels_conv, only: s_dace_convert
-+#endif
- 
-         type(scalar_field), dimension(sys_size), intent(in)    :: qK_cons_vf
-         type(scalar_field), intent(inout)                      :: q_T_sf
-@@ -493,6 +496,15 @@ contains
-         real(wp)               :: f, dGa_dW, dp_dW, df_dW  !< Functions within Newton-Raphson iteration
-         integer                :: iter                     !< Newton-Raphson iteration counter
- 
-+        #if defined(MFC_DACE) && !defined(MFC_DACE_CONV_OFF)
-+        ! P2/T2.3: the DaCe-compiled conversion kernel (device-resident,
-+        ! casopt-baked 5-eq/2-fluid/3-D).  One launch replaces the
-+        ! collapsed(3) per-cell OpenACC loop.  The shim stages
-+        ! DEVICE-RESIDENT: it transposes the declare-created device fields
-+        ! straight into the kernel's flat staging buffers with an acc
-+        ! kernel — no host staging, no acc update here.
-+        call s_dace_convert(qK_cons_vf, q_T_sf, qK_prim_vf, ibounds)
-+        #else
-         $:GPU_PARALLEL_LOOP(collapse=3, private='[alpha_K, alpha_rho_K, Re_K, nRtmp, rho_K, gamma_K, pi_inf_K, qv_K, dyn_pres_K, &
-                             & rhoYks, B, pres, vftmp, nbub_sc, G_K, solid_partial_density, T, pres_mag, Ga, B2, m2, S, W, dW, E, &
-                             & D, f, dGa_dW, dp_dW, df_dW, iter]')
-@@ -756,6 +768,7 @@ contains
-             end do
-         end do
-         $:END_GPU_PARALLEL_LOOP()
-+        #endif
- 
-     end subroutine s_convert_conservative_to_primitive_variables
- 
-diff --git a/src/simulation/m_data_output.fpp b/src/simulation/m_data_output.fpp
-index f47d96ad..2606c892 100644
---- a/src/simulation/m_data_output.fpp
-+++ b/src/simulation/m_data_output.fpp
-@@ -327,6 +327,11 @@ contains
-         end if
- 
-         do i = 1, sys_size
-+            ! The cons fields are declare-create'd (device-resident in the
-+            ! OpenACC build): without this update the text writer dumps the
-+            ! STALE HOST copy (= the initial state) — every q_cons_vf*.dat
-+            ! from this writer was the IC, not the evolved state.
-+            $:GPU_UPDATE(host='[q_cons_vf(i)%sf(:, :, :)]')
-             write (file_path, '(A,I0,A)') trim(t_step_dir) // '/q_cons_vf', i, '.dat'
- 
-             open (2, FILE=trim(file_path), form='unformatted', STATUS='new')
-diff --git a/src/simulation/m_rhs.fpp b/src/simulation/m_rhs.fpp
-index edd500ef..be8c1775 100644
+                 if (p > 0) then
+                     #:if not MFC_CASE_OPTIMIZATION or num_dims > 2
++                        #if defined(MFC_DACE)
++                        if (visc_family_enabled(3) .and. visc_family_contract()) then
++                        call s_dace_visc_grad_d2(z_cc(0:), q_prim_qp%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & q_prim_qp%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & q_prim_qp%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & size(q_prim_qp%vf(iv%beg)%sf, 1), size(q_prim_qp%vf(iv%beg)%sf, 2), &
++                             & is3_viscous%beg, is3_viscous%end, is2_viscous%beg, is2_viscous%end, &
++                             & is1_viscous%beg, is1_viscous%end, is3_viscous%beg + 1, is3_viscous%end - 1)
++                        else
++                        #endif
+                         $:GPU_PARALLEL_LOOP(collapse=3)
+                         do j = is3_viscous%beg + 1, is3_viscous%end
+                             do l = is2_viscous%beg, is2_viscous%end
+@@ -539,7 +646,30 @@
+                             end do
+                         end do
+                         $:END_GPU_PARALLEL_LOOP()
+-
++                        #if defined(MFC_DACE)
++                        end if
++                        #endif
++
++                        #if defined(MFC_DACE)
++                        if (visc_family_enabled(1) .and. visc_family_contract()) then
++                        call s_dace_visc_avg_d0(dqL_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dz_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dz_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dz_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dz_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dz_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dz_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & size(dqL_prim_dz_n(3)%vf(iv%beg)%sf, 1), &
++                             & size(dqL_prim_dz_n(3)%vf(iv%beg)%sf, 2), is3_viscous%beg + 1, &
++                             & is3_viscous%end - 1, is2_viscous%beg, is2_viscous%end, is1_viscous%beg, &
++                             & is1_viscous%end, is1_viscous%beg + 1, is1_viscous%end - 1)
++                        else
++                        #endif
+                         $:GPU_PARALLEL_LOOP(collapse=3)
+                         do l = is3_viscous%beg + 1, is3_viscous%end - 1
+                             do k = is2_viscous%beg, is2_viscous%end
+@@ -575,7 +705,32 @@
+                             end do
+                         end do
+                         $:END_GPU_PARALLEL_LOOP()
+-
++                        #if defined(MFC_DACE)
++                        end if
++                        #endif
++
++                        ! The two level-2 z-gradient face averages -- the z twin of the x pair above.
++                        ! Same shape, same y-face stencil; the swept axis moves to l and the level it
++                        ! reads is 3 rather than 1 (which the CALLER supplies; the TU is identical).
++                        #if defined(MFC_DACE)
++                        if (visc_avg_dir_enabled(2) .and. visc_avg_contract()) then
++                            call s_dace_visc_avg_z(dqL_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                                 & dqL_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                                 & dqL_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                                 & dqR_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                                 & dqR_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                                 & dqR_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                                 & dqL_prim_dz_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                                 & dqL_prim_dz_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                                 & dqL_prim_dz_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                                 & dqR_prim_dz_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                                 & dqR_prim_dz_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                                 & dqR_prim_dz_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                                 & size(dqL_prim_dz_n(3)%vf(iv%beg)%sf, 1), &
++                                 & size(dqL_prim_dz_n(3)%vf(iv%beg)%sf, 2), is1_viscous%beg, is1_viscous%end, &
++                                 & is2_viscous%beg, is2_viscous%end, is3_viscous%beg, is3_viscous%end)
++                        else
++                        #endif
+                         $:GPU_PARALLEL_LOOP(collapse=3)
+                         do l = is3_viscous%beg + 1, is3_viscous%end - 1
+                             do j = is2_viscous%beg + 1, is2_viscous%end
+@@ -610,7 +765,30 @@
+                             end do
+                         end do
+                         $:END_GPU_PARALLEL_LOOP()
+-
++                        #if defined(MFC_DACE)
++                        end if
++                        #endif
++
++                        #if defined(MFC_DACE)
++                        if (visc_family_enabled(3) .and. visc_family_contract()) then
++                        call s_dace_visc_avg_d2(dqL_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dy_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dy_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dy_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dy_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dy_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dy_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & size(dqL_prim_dy_n(2)%vf(iv%beg)%sf, 1), &
++                             & size(dqL_prim_dy_n(2)%vf(iv%beg)%sf, 2), is3_viscous%beg, is3_viscous%end, &
++                             & is2_viscous%beg + 1, is2_viscous%end - 1, is1_viscous%beg, is1_viscous%end, &
++                             & is3_viscous%beg + 1, is3_viscous%end - 1)
++                        else
++                        #endif
+                         $:GPU_PARALLEL_LOOP(collapse=3)
+                         do j = is3_viscous%beg + 1, is3_viscous%end
+                             do l = is2_viscous%beg + 1, is2_viscous%end - 1
+@@ -645,6 +823,29 @@
+                             end do
+                         end do
+                         $:END_GPU_PARALLEL_LOOP()
++                        #if defined(MFC_DACE)
++                        end if
++                        #endif
++                        #if defined(MFC_DACE)
++                        if (visc_family_enabled(3) .and. visc_family_contract()) then
++                        call s_dace_visc_avg_d2(dqL_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dx_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dx_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqL_prim_dx_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dx_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dx_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
++                             & dqR_prim_dx_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
++                             & size(dqL_prim_dx_n(1)%vf(iv%beg)%sf, 1), &
++                             & size(dqL_prim_dx_n(1)%vf(iv%beg)%sf, 2), is3_viscous%beg, is3_viscous%end, &
++                             & is2_viscous%beg, is2_viscous%end, is1_viscous%beg + 1, is1_viscous%end - 1, &
++                             & is3_viscous%beg + 1, is3_viscous%end - 1)
++                        else
++                        #endif
+                         $:GPU_PARALLEL_LOOP(collapse=3)
+                         do j = is3_viscous%beg + 1, is3_viscous%end
+                             do l = is2_viscous%beg, is2_viscous%end
+@@ -678,11 +879,31 @@
+                             end do
+                         end do
+                         $:END_GPU_PARALLEL_LOOP()
+-
++                        #if defined(MFC_DACE)
++                        end if
++                        #endif
++
++                        #if defined(MFC_DACE) && !defined(MFC_DACE_FDIFF_OFF)
++                        ! P2/T2.3: the DaCe-compiled fused fd-gradient kernel
++                        ! (device-resident, casopt-baked 5-eq/2-fluid/3-D,
++                        ! buff_size=2).  Covers the same interior stencil as
++                        ! the three s_compute_fd_gradient GPU loops, fused
++                        ! over the iv field range, one launch instead of
++                        ! iv%end-iv%beg+1.  The shim stages DEVICE-RESIDENT:
++                        ! it transposes the declare-created device fields
++                        ! straight into the kernel's flat staging buffers with
++                        ! acc kernels — no host staging, no acc update here.
++                        call s_dace_fd_gradient(q_prim_qp%vf(iv%beg:iv%end), &
++                                                & dq_prim_dx_qp(1)%vf(iv%beg:iv%end), &
++                                                & dq_prim_dy_qp(1)%vf(iv%beg:iv%end), &
++                                                & dq_prim_dz_qp(1)%vf(iv%beg:iv%end), &
++                                                & iv%end - iv%beg + 1)
++                        #else
+                         do i = iv%beg, iv%end
+                             call s_compute_fd_gradient(q_prim_qp%vf(i), dq_prim_dx_qp(1)%vf(i), dq_prim_dy_qp(1)%vf(i), &
+                                                        & dq_prim_dz_qp(1)%vf(i))
+                         end do
++                        #endif
+                     #:endif
+                 else
+                     do i = iv%beg, iv%end
 --- a/src/simulation/m_rhs.fpp
 +++ b/src/simulation/m_rhs.fpp
-@@ -36,6 +36,11 @@ module m_rhs
+@@ -36,6 +36,11 @@
      use m_igr
      use m_thinc
      use m_pressure_relaxation
@@ -165,7 +335,7 @@ index edd500ef..be8c1775 100644
  
      implicit none
  
-@@ -217,6 +222,7 @@ contains
+@@ -217,6 +222,7 @@
                      do l = 1, sys_size
                          @:ALLOCATE(flux_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                     & idwbuff(3)%beg:idwbuff(3)%end))
@@ -173,7 +343,7 @@ index edd500ef..be8c1775 100644
                          @:ALLOCATE(flux_gsrc_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                     & idwbuff(3)%beg:idwbuff(3)%end))
                      end do
-@@ -225,6 +231,7 @@ contains
+@@ -225,6 +231,7 @@
                          do l = eqn_idx%mom%beg, eqn_idx%E
                              @:ALLOCATE(flux_src_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                         & idwbuff(3)%beg:idwbuff(3)%end))
@@ -181,7 +351,7 @@ index edd500ef..be8c1775 100644
                          end do
                      end if
  
-@@ -241,6 +248,7 @@ contains
+@@ -241,6 +248,7 @@
                      ! for structural consistency with s_finalize_riemann_solver.
                      @:ALLOCATE(flux_src_n(i)%vf(eqn_idx%adv%beg)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                 & idwbuff(3)%beg:idwbuff(3)%end))
@@ -189,7 +359,7 @@ index edd500ef..be8c1775 100644
  
                      if (adv_src_mode == adv_src_mode_alpha_iface .or. adv_src_mode == adv_src_mode_none) then
                          ! Alpha-interface needs separate per-fluid arrays. HLLD (adv_src_mode_none) allocates for structural
-@@ -248,6 +256,7 @@ contains
+@@ -248,6 +256,7 @@
                          do l = eqn_idx%adv%beg + 1, eqn_idx%adv%end
                              @:ALLOCATE(flux_src_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                         & idwbuff(3)%beg:idwbuff(3)%end))
@@ -197,7 +367,7 @@ index edd500ef..be8c1775 100644
                          end do
                      end if
  
-@@ -255,6 +264,7 @@ contains
+@@ -255,6 +264,7 @@
                          do l = eqn_idx%species%beg, eqn_idx%species%end
                              @:ALLOCATE(flux_src_n(i)%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                         & idwbuff(3)%beg:idwbuff(3)%end))
@@ -205,7 +375,7 @@ index edd500ef..be8c1775 100644
                          end do
                          if (chem_params%diffusion .and. .not. viscous) then
                              @:ALLOCATE(flux_src_n(i)%vf(eqn_idx%E)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
-@@ -1110,6 +1120,30 @@ contains
+@@ -1110,6 +1120,30 @@
                  call s_cbc(q_prim_vf%vf, flux_n(idir)%vf, flux_src_n_vf%vf, idir, 1, irx, iry, irz)
              end if
  
@@ -236,7 +406,7 @@ index edd500ef..be8c1775 100644
              if (hypo_nc_mode /= hypo_nc_mode_dual_pass) then
                  $:GPU_PARALLEL_LOOP(collapse=4,private='[j, k_loop, l_loop, q_loop, inv_ds, flux_face1, flux_face2]')
                  do j = 1, sys_size
-@@ -1178,6 +1212,7 @@ contains
+@@ -1178,6 +1212,7 @@
              end if
  
              call s_add_directional_advection_source_terms(idir, rhs_vf, q_cons_vf, q_prim_vf, flux_src_n_vf, Kterm)
@@ -244,7 +414,7 @@ index edd500ef..be8c1775 100644
          case (2)  ! y-direction
              if (bc_y%beg <= BC_CHAR_SLIP_WALL .and. bc_y%beg >= BC_CHAR_SUP_OUTFLOW) then
                  call s_cbc(q_prim_vf%vf, flux_n(idir)%vf, flux_src_n_vf%vf, idir, -1, irx, iry, irz)
-@@ -1186,6 +1221,27 @@ contains
+@@ -1186,6 +1221,27 @@
                  call s_cbc(q_prim_vf%vf, flux_n(idir)%vf, flux_src_n_vf%vf, idir, 1, irx, iry, irz)
              end if
  
@@ -272,7 +442,7 @@ index edd500ef..be8c1775 100644
              if (hypo_nc_mode /= hypo_nc_mode_dual_pass) then
                  $:GPU_PARALLEL_LOOP(collapse=4,private='[j, k, l, q, inv_ds, flux_face1, flux_face2]')
                  do j = 1, sys_size
-@@ -1310,6 +1366,7 @@ contains
+@@ -1310,6 +1366,7 @@
              end if
  
              call s_add_directional_advection_source_terms(idir, rhs_vf, q_cons_vf, q_prim_vf, flux_src_n_vf, Kterm)
@@ -280,7 +450,7 @@ index edd500ef..be8c1775 100644
          case (3)  ! z-direction
              if (bc_z%beg <= BC_CHAR_SLIP_WALL .and. bc_z%beg >= BC_CHAR_SUP_OUTFLOW) then
                  call s_cbc(q_prim_vf%vf, flux_n(idir)%vf, flux_src_n_vf%vf, idir, -1, irx, iry, irz)
-@@ -1348,6 +1405,27 @@ contains
+@@ -1348,6 +1405,27 @@
                  end do
                  $:END_GPU_PARALLEL_LOOP()
              else  ! Cartesian Coordinates
@@ -308,7 +478,7 @@ index edd500ef..be8c1775 100644
                  if (hypo_nc_mode /= hypo_nc_mode_dual_pass) then
                      $:GPU_PARALLEL_LOOP(collapse=4,private='[j, k, l, q, inv_ds, flux_face1, flux_face2]')
                      do j = 1, sys_size
-@@ -1417,6 +1495,7 @@ contains
+@@ -1417,6 +1495,7 @@
              end if
  
              call s_add_directional_advection_source_terms(idir, rhs_vf, q_cons_vf, q_prim_vf, flux_src_n_vf, Kterm)
@@ -316,16 +486,150 @@ index edd500ef..be8c1775 100644
          end select
  
      contains
-diff --git a/src/simulation/m_riemann_solver_hllc.fpp b/src/simulation/m_riemann_solver_hllc.fpp
-index b7e3b0a7..aa9cf295 100644
+--- a/src/simulation/m_weno.fpp
++++ b/src/simulation/m_weno.fpp
+@@ -15,6 +15,36 @@
+     use m_nvtx
+ 
+     private; public :: s_initialize_weno_module, s_finalize_weno_module, s_weno, s_pack_weno_input_arr
++    !> The fused sweep dispatch (M1, MFC_DACE_FUSED) reconstructs both Riemann
++    !! states inside the HLLC kernel, so it reads the primitive buffer and the
++    !! WENO coefficient tables in place.  They live here, and the DaCe WENO
++    !! dispatch receives them as arguments from inside this module -- the fused
++    !! one is called from m_riemann_solver_hllc, so they have to be public.
++    public :: v_rs_weno, poly_coef_cbL_x, poly_coef_cbR_x, d_cbL_x, d_cbR_x, &
++              poly_coef_cbL_y, poly_coef_cbR_y, d_cbL_y, d_cbR_y, &
++              poly_coef_cbL_z, poly_coef_cbR_z, d_cbL_z, d_cbR_z
++    !> M4 (WENO3): the smoothness-indicator coefficients.  WENO5 computes beta analytically inside the
++    !! kernel and never needs these; the WENO3 body reads them from a table, so the WENO3 fused
++    !! dispatch needs them here too.  Already device-resident (GPU_DECLARE + the GPU_UPDATE in
++    !! s_initialize_weno), so the shim resolves them with acc_deviceptr like the other tables.
++    public :: beta_coef_x, beta_coef_y, beta_coef_z
++
++    !> M1 fused sweep: which directions this step's reconstruction was skipped for
++    !! because the fused HLLC kernel does it (see the dispatch in s_weno).  Read by
++    !! m_riemann_solver_hllc, so both sites act on one verdict.
++    logical, dimension(3) :: dace_fused_weno_active = [.false., .false., .false.]
++    public :: dace_fused_weno_active
++
++    !> M4 fused WENO3: the same verdict for the weno_order == 3 family, which is a separate
++    !! library set (a library serves one weno_order) and therefore only exists in a build
++    !! configured for it.  Outside such a build this is a constant .false., so the guard sites
++    !! below can name it unconditionally without dragging the shim into the link.
++#if defined(MFC_DACE_WENO3)
++    logical, dimension(3) :: dace_fused3_weno_active = [.false., .false., .false.]
++#else
++    logical, parameter, dimension(3) :: dace_fused3_weno_active = [.false., .false., .false.]
++#endif
++    public :: dace_fused3_weno_active
+ 
+     !> @name The cell-average variables that will be WENO-reconstructed unpacked into an array for performance
+     !> @{
+@@ -912,6 +942,15 @@
+     !> Perform WENO reconstruction of left and right cell-boundary values from cell-averaged variables
+     subroutine s_weno(v_vf, vL_rs_vf_x, vR_rs_vf_x, weno_dir, is1_weno_d, is2_weno_d, is3_weno_d)
+ 
++#if defined(MFC_DACE)
++        use m_dace_kernels_weno, only: s_dace_weno_x, s_dace_weno_y, &
++                                       & s_dace_weno_z, weno_dace_contract, &
++                                       & weno_dace_mode, weno_dace_dirs
++        use m_dace_kernels_fused, only: dace_fused_contract, dace_fused_dirs
++#if defined(MFC_DACE_WENO3)
++        use m_dace_kernels_fused3, only: dace_fused3_contract, dace_fused3_dirs
++#endif
++#endif
+         type(scalar_field), dimension(1:), intent(in)                                          :: v_vf
+         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vL_rs_vf_x
+         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vR_rs_vf_x
+@@ -994,6 +1033,19 @@
+             call s_pack_weno_input_arr(v_vf)
+         end if
+ 
++#if defined(MFC_DACE) && defined(MFC_DACE_WENO3)
++        !> M4 fused WENO3: the verdict for the weno_order == 3 family.  It is order-generic, so it
++        !! is set HERE -- before the order split -- for whichever direction this call handles.
++        !! M1's verdict lives inside the weno_order == 5 branch; putting the WENO3 one there made it
++        !! unreachable for a WENO3 case (and the gate then passed vacuously, which is how it was
++        !! caught).  No `weno_dace_contract()` clause: that requires weno_order == 5 by design.
++        if (weno_dir >= 1 .and. weno_dir <= 3) then
++            dace_fused3_weno_active(weno_dir) = &
++                & dace_fused3_dirs(weno_dir) .and. dace_fused3_contract() .and. &
++                & v_size == 8 .and. uniform_grid(weno_dir)
++        end if
++#endif
++
+         if (weno_order == 3) then
+             #:for WENO_DIR, XYZ, STENCIL_VAR, COORDS, X_BND, Y_BND, Z_BND in &
+                     [(1, 'x', 'j', '{STENCIL_IDX}, k, l', 'is1_weno', 'is2_weno', 'is3_weno'), &
+@@ -1093,6 +1145,51 @@
+                     #:set SV = STENCIL_VAR
+                     #:set SF = lambda offs: COORDS.format(STENCIL_IDX = SV + offs)
+                     if (weno_dir == ${WENO_DIR}$) then
++#if defined(MFC_DACE)
++                        !> M1 fused sweep: when the fused kernel will do this direction's
++                        !! reconstruction inside the HLLC solve, the reconstruction here is
++                        !! skipped entirely -- its vL/vR outputs have no consumer on that
++                        !! path.  The decision is published (not re-derived) because
++                        !! m_riemann_solver_hllc must reach the SAME verdict: a WENO that
++                        !! skipped while the fused call did not happen would leave the
++                        !! Riemann states stale.  v_size (this module's private state) and
++                        !! uniform_grid are part of it for that reason.
++                        dace_fused_weno_active(${WENO_DIR}$) = &
++                            & dace_fused_dirs(${WENO_DIR}$) .and. dace_fused_contract() .and. &
++                            & weno_dace_contract() .and. v_size == 8 .and. &
++                            & uniform_grid(${WENO_DIR}$)
++#endif
++#if defined(MFC_DACE) && !defined(MFC_DACE_WENO_OFF)
++                        if (.not. dace_fused_weno_active(${WENO_DIR}$) .and. &
++                            & .not. dace_fused3_weno_active(${WENO_DIR}$) .and. &
++                            & weno_dace_dirs(${WENO_DIR}$) .and. &
++                            & weno_dace_mode() >= 1 .and. weno_dace_contract() .and. &
++                            & v_size == 8 .and. uniform_grid(${WENO_DIR}$)) then
++                            #:if WENO_DIR == 1
++                            call s_dace_weno_x(v_rs_weno, poly_coef_cbL_x, poly_coef_cbR_x, &
++                                               & d_cbL_x, d_cbR_x, vL_rs_vf_x, vR_rs_vf_x, &
++                                               & is1_weno%beg, is1_weno%end, is2_weno%beg, &
++                                               & is2_weno%end, is3_weno%beg, is3_weno%end)
++                            #:elif WENO_DIR == 2
++                            call s_dace_weno_y(v_rs_weno, poly_coef_cbL_y, poly_coef_cbR_y, &
++                                               & d_cbL_y, d_cbR_y, vL_rs_vf_x, vR_rs_vf_x, &
++                                               & is2_weno%beg, is2_weno%end, is1_weno%beg, &
++                                               & is1_weno%end, is3_weno%beg, is3_weno%end)
++                            #:else
++                            call s_dace_weno_z(v_rs_weno, poly_coef_cbL_z, poly_coef_cbR_z, &
++                                               & d_cbL_z, d_cbR_z, vL_rs_vf_x, vR_rs_vf_x, &
++                                               & is3_weno%beg, is3_weno%end, is2_weno%beg, &
++                                               & is2_weno%end, is1_weno%beg, is1_weno%end)
++                            #:endif
++                        end if
++                        if (.not. dace_fused_weno_active(${WENO_DIR}$) .and. &
++                            & .not. dace_fused3_weno_active(${WENO_DIR}$) .and. &
++                            & .not. (weno_dace_dirs(${WENO_DIR}$) .and. &
++                                   & weno_dace_mode() == 1 .and. weno_dace_contract() .and. &
++                                   & v_size == 8 .and. uniform_grid(${WENO_DIR}$))) then
++#else
++                        if (.true.) then
++#endif
+                         $:GPU_PARALLEL_LOOP(collapse=3,private='[dvd, poly, beta, alpha, omega, tau, delta, q, vp0, vm1, vm2, &
+                                             & vp1, vp2]')
+                         do l = ${Z_BND}$%beg, ${Z_BND}$%end
+@@ -1235,6 +1332,7 @@
+                             end do
+                         end do
+                         $:END_GPU_PARALLEL_LOOP()
++                        end if
+ 
+                         if (mp_weno) then
+                             call s_preserve_monotonicity(v_rs_weno, vL_rs_vf_x, vR_rs_vf_x, weno_dir)
 --- a/src/simulation/m_riemann_solver_hllc.fpp
 +++ b/src/simulation/m_riemann_solver_hllc.fpp
-@@ -21,17 +21,97 @@ module m_riemann_solver_hllc
+@@ -21,6 +21,25 @@
          & get_mixture_energy_mass, get_species_specific_heats_r, get_species_enthalpies_rt, get_mixture_specific_heat_cp_mass, &
          & molecular_weights
      use m_riemann_state
 +#if defined(MFC_DACE)
-+    use m_dace_kernels_sweeps, only: s_dace_hllc_x, s_dace_hllc_capture
++    use m_dace_kernels_sweeps, only: s_dace_hllc_x, s_dace_hllc_capture, &
++        & hllc_dace_mode, hllc_dace_dirs, hllc_dace_contract
 +    use m_dace_kernels_fused, only: s_dace_fused_x
 +#if defined(MFC_DACE_WENO3)
 +    !> M4: the WENO3-mapped fused kernel family (buff=3, a separate library set).
@@ -345,72 +649,7 @@ index b7e3b0a7..aa9cf295 100644
  
      implicit none
  
- contains
- 
-+    !> Runtime mode for the DaCe HLLC dispatch (P2/T2.3 unit harness).
-+    !! Reads MFC_DACE_HLLC_RT_OFF once: unset -> 1 (DaCe kernel only),
-+    !! "1" -> 0 (native OpenACC kernel only), "2" -> capture (run the DaCe
-+    !! call, then the native OpenACC kernel, then dump both result sets).
-+    function hllc_dace_mode() result(m)
-+        integer :: m
-+        character(len=8) :: env
-+        integer :: st
-+        logical, save :: cached = .false.
-+        integer, save :: cached_val = 1
-+
-+        if (.not. cached) then
-+            cached_val = 1
-+            call get_environment_variable('MFC_DACE_HLLC_RT_OFF', env, status=st)
-+            if (st == 0) then
-+                if (trim(env) == '1') then
-+                    cached_val = 0
-+                else if (trim(env) == '2') then
-+                    cached_val = 2
-+                end if
-+            end if
-+            cached = .true.
-+        end if
-+        m = cached_val
-+    end function hllc_dace_mode
-+
-+    !> The dispatch's bake contract, hoisted so the OpenACC fallback reads
-+    !! the SAME predicate as the DaCe call (the two-guard split above once
-+    !! skipped BOTH paths when the contract was false with mode = 1).
-+    !> Per-direction kill switch (bisect): MFC_DACE_HLLC_DIRS holds a
-+    !! mask string like "101" (x on, y off, z on); unset = all enabled.
-+    function hllc_dace_dirs(nd) result(c)
-+        integer, intent(in) :: nd
-+        logical :: c
-+        character(len=8) :: env
-+        integer :: st
-+        logical, save :: cached = .false.
-+        logical, save :: cached_val(3) = [.true., .true., .true.]
-+
-+        if (.not. cached) then
-+            call get_environment_variable('MFC_DACE_HLLC_DIRS', env, status=st)
-+            if (st == 0 .and. len_trim(env) >= 1) then
-+                cached_val(1) = env(1:1) == '1'
-+                cached_val(2) = len_trim(env) < 2 .or. env(2:2) == '1'
-+                cached_val(3) = len_trim(env) < 3 .or. env(3:3) == '1'
-+            end if
-+            cached = .true.
-+        end if
-+        c = cached_val(nd)
-+    end function hllc_dace_dirs
-+
-+    function hllc_dace_contract() result(c)
-+        logical :: c
-+        c = (num_fluids == 2 .and. model_eqns == 2 .and. &
-+             & wave_speeds == wave_speeds_direct .and. &
-+             & .not. surface_tension .and. .not. chemistry .and. &
-+             & .not. hypoelasticity .and. .not. mpp_lim .and. &
-+             & .not. cyl_coord .and. .not. bubbles_euler .and. &
-+             & .not. qbmm .and. .not. hyper_cleaning .and. &
-+             & .not. relativity .and. .not. alt_soundspeed)
-+    end function hllc_dace_contract
-+
-     !> HLLC Riemann solver with contact restoration, Toro et al. Shock Waves (1994)
-     subroutine s_hllc_riemann_solver(qL_prim_rsx_vf, dqL_prim_dx_vf, dqL_prim_dy_vf, dqL_prim_dz_vf, qL_prim_vf, qR_prim_rsx_vf, &
+@@ -31,7 +50,7 @@
                                       & dqR_prim_dx_vf, dqR_prim_dy_vf, dqR_prim_dz_vf, qR_prim_vf, q_prim_vf, flux_vf, &
                                       & flux_src_vf, flux_gsrc_vf, norm_dir, ix, iy, iz)
  
@@ -419,7 +658,7 @@ index b7e3b0a7..aa9cf295 100644
          type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
          type(scalar_field), allocatable, dimension(:), intent(inout) :: qL_prim_vf, qR_prim_vf
          type(scalar_field), allocatable, dimension(:), intent(inout) :: dqL_prim_dx_vf, dqR_prim_dx_vf, dqL_prim_dy_vf, &
-@@ -116,6 +196,7 @@ contains
+@@ -116,6 +135,7 @@
          real(wp) :: pcorr                      !< low Mach number correction
          integer :: i, j, k, l, q               !< Generic loop iterators
          integer :: Re_size_loc1, Re_size_loc2  !< host copy of Re_size; amdflang reads the declare-target original stale cross-TU
@@ -427,7 +666,7 @@ index b7e3b0a7..aa9cf295 100644
  
          ! HLLC star-state helpers
          #:if not MFC_CASE_OPTIMIZATION and USING_AMD
-@@ -166,6 +247,8 @@ contains
+@@ -166,6 +186,8 @@
          call s_initialize_riemann_solver(flux_src_vf, norm_dir)
  
          Re_size_loc1 = Re_size(1); Re_size_loc2 = Re_size(2)
@@ -436,11 +675,10 @@ index b7e3b0a7..aa9cf295 100644
  
          #:for NORM_DIR, XYZ, STENCIL_VAR, COORDS, X_BND, Y_BND, Z_BND in &
                      [(1, 'x', 'j', '{STENCIL_IDX}, k, l', 'is1', 'is2', 'is3'), &
-@@ -846,6 +929,52 @@ contains
-                         else if (hypoelasticity) then
+@@ -847,6 +869,52 @@
                          #:else
                          else
-+                        #:endif
+                         #:endif
 +                        #:if not HYPO
 +#if defined(MFC_DACE) && !defined(MFC_DACE_HLLC_OFF)
 +                        if (dace_fused_weno_active(${NORM_DIR}$)) then
@@ -486,10 +724,11 @@ index b7e3b0a7..aa9cf295 100644
 +#else
 +                        if (.true.) then
 +#endif
-                         #:endif
++                        #:endif
                          ! 5-equation model (model_eqns=2): mixture total energy, volume fraction advection. Emitted twice --
                          ! once specialized for hypoelasticity, once pure-fluid. The #:if HYPO guards strip every hypoelastic
-@@ -1601,6 +1730,16 @@ contains
+                         ! statement and private variable from the pure-fluid emission, keeping its body and directive
+@@ -1601,6 +1669,16 @@
                              end do
                          end do
                          $:END_GPU_PARALLEL_LOOP()
@@ -506,23 +745,9 @@ index b7e3b0a7..aa9cf295 100644
                      #:endfor
                  end if
              end if
-diff --git a/src/simulation/m_riemann_solvers.fpp b/src/simulation/m_riemann_solvers.fpp
-index 9ee91ecc..f83fe41e 100644
---- a/src/simulation/m_riemann_solvers.fpp
-+++ b/src/simulation/m_riemann_solvers.fpp
-@@ -107,6 +107,7 @@ contains
-         @:ALLOCATE(flux_gsrc_rsx_vf(-1:m, -1:n, -1:p, 1:sys_size))
-         @:ALLOCATE(flux_src_rsx_vf(-1:m, -1:n, -1:p, eqn_idx%adv%beg:sys_size))
-         @:ALLOCATE(vel_src_rsx_vf(-1:m, -1:n, -1:p, 1:num_vels))
-+        ! P2/T2.3: read by the DaCe sweeps shim dispatch (public)
-         if (qbmm) then
-             @:ALLOCATE(mom_sp_rsx_vf(-1:m+1, -1:n+1, -1:p+1, 1:4))
-         end if
-diff --git a/src/simulation/m_riemann_state.fpp b/src/simulation/m_riemann_state.fpp
-index 5cb4e00c..fb64d0fa 100644
 --- a/src/simulation/m_riemann_state.fpp
 +++ b/src/simulation/m_riemann_state.fpp
-@@ -20,7 +20,7 @@ module m_riemann_state
+@@ -20,7 +20,7 @@
      !! direct evaluation of source terms, by using the left and right states given in qK_prim_rs_vf, dqK_prim_ds_vf where ds = dx,
      !! dy or dz.
      !> @{
@@ -531,7 +756,7 @@ index 5cb4e00c..fb64d0fa 100644
      $:GPU_DECLARE(create='[flux_rsx_vf, flux_src_rsx_vf]')
      !> @}
  
-@@ -48,7 +48,7 @@ module m_riemann_state
+@@ -48,7 +48,7 @@
  
      ! Cell-boundary velocity from Riemann solution; used for source flux
  
@@ -540,7 +765,7 @@ index 5cb4e00c..fb64d0fa 100644
      $:GPU_DECLARE(create='[vel_src_rsx_vf]')
  
      real(wp), allocatable, dimension(:,:,:,:) :: mom_sp_rsx_vf
-@@ -273,6 +273,10 @@ contains
+@@ -273,6 +273,10 @@
      subroutine s_compute_viscous_source_flux(velL_vf, dvelL_dx_vf, dvelL_dy_vf, dvelL_dz_vf, velR_vf, dvelR_dx_vf, dvelR_dy_vf, &
          & dvelR_dz_vf, flux_src_vf, q_prim_vf, norm_dir, ix, iy, iz)
  
@@ -551,7 +776,7 @@ index 5cb4e00c..fb64d0fa 100644
          type(scalar_field), dimension(num_vels), intent(in) :: velL_vf, velR_vf, dvelL_dx_vf, dvelR_dx_vf, dvelL_dy_vf, &
               & dvelR_dy_vf, dvelL_dz_vf, dvelR_dz_vf
  
-@@ -285,8 +289,66 @@ contains
+@@ -285,8 +289,66 @@
              call s_compute_cylindrical_viscous_source_flux(velL_vf, dvelL_dx_vf, dvelL_dy_vf, dvelL_dz_vf, velR_vf, dvelR_dx_vf, &
                  & dvelR_dy_vf, dvelR_dz_vf, flux_src_vf, q_prim_vf, norm_dir, ix, iy, iz)
          else
@@ -618,11 +843,90 @@ index 5cb4e00c..fb64d0fa 100644
          end if
  
      end subroutine s_compute_viscous_source_flux
-diff --git a/src/simulation/m_start_up.fpp b/src/simulation/m_start_up.fpp
-index 97b769e0..4376ba54 100644
+--- a/src/simulation/m_time_steppers.fpp
++++ b/src/simulation/m_time_steppers.fpp
+@@ -11,6 +11,9 @@
+     use m_derived_types
+     use m_global_parameters
+     use m_rhs
++#if defined(MFC_DACE)
++    use m_dace_kernels_rk, only: s_dace_rk_stage
++#endif
+     use m_chemistry
+     use m_reactive_burn, only: s_reactive_burn_substep
+     use m_pressure_relaxation
+@@ -33,9 +36,9 @@
+ 
+     implicit none
+ 
+-    type(vector_field), allocatable, dimension(:)    :: q_cons_ts  !< Cell-average conservative variables at each time-stage (TS)
++    type(vector_field), allocatable, dimension(:), public :: q_cons_ts  !< Cell-average conservative variables at each time-stage (TS)
+     type(scalar_field), allocatable, dimension(:)    :: q_prim_vf  !< Cell-average primitive variables at the current time-stage
+-    type(scalar_field), allocatable, dimension(:)    :: rhs_vf     !< Cell-average RHS variables at the current time-stage
++    type(scalar_field), allocatable, dimension(:), public :: rhs_vf     !< Cell-average RHS variables at the current time-stage
+     type(integer_field), allocatable, dimension(:,:) :: bc_type    !< Boundary condition identifiers
+     !> Cell-average primitive variables at consecutive TIMESTEPS
+     type(vector_field), allocatable, dimension(:) :: q_prim_ts1, q_prim_ts2
+@@ -44,7 +47,7 @@
+     real(wp), allocatable, dimension(:,:,:,:,:)   :: rhs_mv
+     integer, private                              :: num_ts  !< Number of time stages in the time-stepping scheme
+     integer                                       :: stor    !< storage index
+-    real(wp), allocatable, dimension(:,:)         :: rk_coef
++    real(wp), allocatable, dimension(:,:), public :: rk_coef
+     integer, private                              :: num_probe_ts
+ 
+     $:GPU_DECLARE(create='[q_cons_ts, q_prim_vf, q_T_sf, rhs_vf, q_prim_ts1, q_prim_ts2, rhs_mv, rhs_pb, rk_coef, stor, bc_type]')
+@@ -490,6 +493,15 @@
+             end if
+ 
+             if (bubbles_lagrange .and. .not. adap_dt) call s_update_lagrange_tdv_rk(q_prim_vf, bc_type, stage=s)
++            #if defined(MFC_DACE) && !defined(MFC_DACE_RK_OFF)
++            ! P2/T2.3: the DaCe-compiled RK-stage kernel (device-resident,
++            ! casopt-baked 5-eq/2-fluid/3-D, dt by value).  One launch
++            ! replaces the collapsed(4) stage-combination loop.  The shim
++            ! stages DEVICE-RESIDENT: acc-kernel transposes between the
++            ! declare-created device fields and the kernel's flat buffers —
++            ! no host staging, no acc update here.
++            call s_dace_rk_stage(s, rk_coef, q_cons_ts, rhs_vf, stor, sys_size)
++            #else
+             $:GPU_PARALLEL_LOOP(collapse=4)
+             do i = 1, sys_size
+                 do l = 0, p
+@@ -512,6 +524,7 @@
+                 end do
+             end do
+             $:END_GPU_PARALLEL_LOOP()
++            #endif
+             ! Evolve pb and mv for non-polytropic qbmm
+             if (qbmm .and. (.not. polytropic)) then
+                 $:GPU_PARALLEL_LOOP(collapse=5)
+--- a/src/simulation/m_riemann_solvers.fpp
++++ b/src/simulation/m_riemann_solvers.fpp
+@@ -107,6 +107,7 @@
+         @:ALLOCATE(flux_gsrc_rsx_vf(-1:m, -1:n, -1:p, 1:sys_size))
+         @:ALLOCATE(flux_src_rsx_vf(-1:m, -1:n, -1:p, eqn_idx%adv%beg:sys_size))
+         @:ALLOCATE(vel_src_rsx_vf(-1:m, -1:n, -1:p, 1:num_vels))
++        ! P2/T2.3: read by the DaCe sweeps shim dispatch (public)
+         if (qbmm) then
+             @:ALLOCATE(mom_sp_rsx_vf(-1:m+1, -1:n+1, -1:p+1, 1:4))
+         end if
+--- a/src/simulation/m_data_output.fpp
++++ b/src/simulation/m_data_output.fpp
+@@ -327,6 +327,11 @@
+         end if
+ 
+         do i = 1, sys_size
++            ! The cons fields are declare-create'd (device-resident in the
++            ! OpenACC build): without this update the text writer dumps the
++            ! STALE HOST copy (= the initial state) — every q_cons_vf*.dat
++            ! from this writer was the IC, not the evolved state.
++            $:GPU_UPDATE(host='[q_cons_vf(i)%sf(:, :, :)]')
+             write (file_path, '(A,I0,A)') trim(t_step_dir) // '/q_cons_vf', i, '.dat'
+ 
+             open (2, FILE=trim(file_path), form='unformatted', STATUS='new')
 --- a/src/simulation/m_start_up.fpp
 +++ b/src/simulation/m_start_up.fpp
-@@ -10,6 +10,8 @@ module m_start_up
+@@ -10,6 +10,8 @@
  
      use m_derived_types
      use m_global_parameters
@@ -631,7 +935,7 @@ index 97b769e0..4376ba54 100644
      use m_mpi_proxy
      use m_mpi_common
      use m_variables_conversion
-@@ -1052,8 +1054,25 @@ contains
+@@ -1052,8 +1054,25 @@
          integer :: i
  
          if (.not. down_sample) then
@@ -658,524 +962,132 @@ index 97b769e0..4376ba54 100644
              end do
          end if
  
-diff --git a/src/simulation/m_time_steppers.fpp b/src/simulation/m_time_steppers.fpp
-index ab6abb63..56111030 100644
---- a/src/simulation/m_time_steppers.fpp
-+++ b/src/simulation/m_time_steppers.fpp
-@@ -11,6 +11,9 @@ module m_time_steppers
-     use m_derived_types
-     use m_global_parameters
-     use m_rhs
+--- a/src/common/m_variables_conversion.fpp
++++ b/src/common/m_variables_conversion.fpp
+@@ -459,6 +459,9 @@
+     subroutine s_convert_conservative_to_primitive_variables(qK_cons_vf, q_T_sf, qK_prim_vf, ibounds)
+ 
+         use m_global_parameters_common, only: shear_indices  ! Performance fix with AMDFlang
 +#if defined(MFC_DACE)
-+    use m_dace_kernels_rk, only: s_dace_rk_stage
++    use m_dace_kernels_conv, only: s_dace_convert
 +#endif
-     use m_chemistry
-     use m_reactive_burn, only: s_reactive_burn_substep
-     use m_pressure_relaxation
-@@ -33,9 +36,9 @@ module m_time_steppers
  
-     implicit none
+         type(scalar_field), dimension(sys_size), intent(in)    :: qK_cons_vf
+         type(scalar_field), intent(inout)                      :: q_T_sf
+@@ -493,6 +496,15 @@
+         real(wp)               :: f, dGa_dW, dp_dW, df_dW  !< Functions within Newton-Raphson iteration
+         integer                :: iter                     !< Newton-Raphson iteration counter
  
--    type(vector_field), allocatable, dimension(:)    :: q_cons_ts  !< Cell-average conservative variables at each time-stage (TS)
-+    type(vector_field), allocatable, dimension(:), public :: q_cons_ts  !< Cell-average conservative variables at each time-stage (TS)
-     type(scalar_field), allocatable, dimension(:)    :: q_prim_vf  !< Cell-average primitive variables at the current time-stage
--    type(scalar_field), allocatable, dimension(:)    :: rhs_vf     !< Cell-average RHS variables at the current time-stage
-+    type(scalar_field), allocatable, dimension(:), public :: rhs_vf     !< Cell-average RHS variables at the current time-stage
-     type(integer_field), allocatable, dimension(:,:) :: bc_type    !< Boundary condition identifiers
-     !> Cell-average primitive variables at consecutive TIMESTEPS
-     type(vector_field), allocatable, dimension(:) :: q_prim_ts1, q_prim_ts2
-@@ -44,7 +47,7 @@ module m_time_steppers
-     real(wp), allocatable, dimension(:,:,:,:,:)   :: rhs_mv
-     integer, private                              :: num_ts  !< Number of time stages in the time-stepping scheme
-     integer                                       :: stor    !< storage index
--    real(wp), allocatable, dimension(:,:)         :: rk_coef
-+    real(wp), allocatable, dimension(:,:), public :: rk_coef
-     integer, private                              :: num_probe_ts
- 
-     $:GPU_DECLARE(create='[q_cons_ts, q_prim_vf, q_T_sf, rhs_vf, q_prim_ts1, q_prim_ts2, rhs_mv, rhs_pb, rk_coef, stor, bc_type]')
-@@ -490,6 +493,15 @@ contains
-             end if
- 
-             if (bubbles_lagrange .and. .not. adap_dt) call s_update_lagrange_tdv_rk(q_prim_vf, bc_type, stage=s)
-+            #if defined(MFC_DACE) && !defined(MFC_DACE_RK_OFF)
-+            ! P2/T2.3: the DaCe-compiled RK-stage kernel (device-resident,
-+            ! casopt-baked 5-eq/2-fluid/3-D, dt by value).  One launch
-+            ! replaces the collapsed(4) stage-combination loop.  The shim
-+            ! stages DEVICE-RESIDENT: acc-kernel transposes between the
-+            ! declare-created device fields and the kernel's flat buffers —
-+            ! no host staging, no acc update here.
-+            call s_dace_rk_stage(s, rk_coef, q_cons_ts, rhs_vf, stor, sys_size)
-+            #else
-             $:GPU_PARALLEL_LOOP(collapse=4)
-             do i = 1, sys_size
-                 do l = 0, p
-@@ -512,6 +524,7 @@ contains
-                 end do
++        #if defined(MFC_DACE) && !defined(MFC_DACE_CONV_OFF)
++        ! P2/T2.3: the DaCe-compiled conversion kernel (device-resident,
++        ! casopt-baked 5-eq/2-fluid/3-D).  One launch replaces the
++        ! collapsed(3) per-cell OpenACC loop.  The shim stages
++        ! DEVICE-RESIDENT: it transposes the declare-created device fields
++        ! straight into the kernel's flat staging buffers with an acc
++        ! kernel — no host staging, no acc update here.
++        call s_dace_convert(qK_cons_vf, q_T_sf, qK_prim_vf, ibounds)
++        #else
+         $:GPU_PARALLEL_LOOP(collapse=3, private='[alpha_K, alpha_rho_K, Re_K, nRtmp, rho_K, gamma_K, pi_inf_K, qv_K, dyn_pres_K, &
+                             & rhoYks, B, pres, vftmp, nbub_sc, G_K, solid_partial_density, T, pres_mag, Ga, B2, m2, S, W, dW, E, &
+                             & D, f, dGa_dW, dp_dW, df_dW, iter]')
+@@ -756,6 +768,7 @@
              end do
-             $:END_GPU_PARALLEL_LOOP()
-+            #endif
-             ! Evolve pb and mv for non-polytropic qbmm
-             if (qbmm .and. (.not. polytropic)) then
-                 $:GPU_PARALLEL_LOOP(collapse=5)
-diff --git a/src/simulation/m_viscous.fpp b/src/simulation/m_viscous.fpp
-index 981cf25e..4ec5fa31 100644
---- a/src/simulation/m_viscous.fpp
-+++ b/src/simulation/m_viscous.fpp
-@@ -14,6 +14,14 @@ module m_viscous
+         end do
+         $:END_GPU_PARALLEL_LOOP()
++        #endif
  
-     use m_derived_types
-     use m_global_parameters
-+#if defined(MFC_DACE)
-+    use m_dace_kernels, only: s_dace_fd_gradient
-+    use m_dace_kernels_visc_avg, only: s_dace_visc_avg_x, s_dace_visc_avg_z, &
-+        & visc_avg_dir_enabled, visc_avg_contract
-+    use m_dace_kernels_visc_family, only: s_dace_visc_avg_d0, s_dace_visc_avg_d2, &
-+        & s_dace_visc_grad_d0, s_dace_visc_grad_d1, s_dace_visc_grad_d2, &
-+        & visc_family_enabled, visc_family_contract
-+#endif
-     use m_weno
-     use m_muscl
-     use m_helper
-@@ -383,6 +391,20 @@ contains
+     end subroutine s_convert_conservative_to_primitive_variables
  
-             $:GPU_UPDATE(device='[is1_viscous, is2_viscous, is3_viscous]')
- 
-+            #if defined(MFC_DACE)
-+            if (visc_family_enabled(1) .and. visc_family_contract()) then
-+            call s_dace_visc_grad_d0(x_cc(0:), q_prim_qp%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                 & q_prim_qp%vf(iv%beg + 1)%sf(0:, 0:, 0:), q_prim_qp%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                 & dqL_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                 & dqL_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                 & dqL_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                 & dqR_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                 & dqR_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                 & dqR_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), size(q_prim_qp%vf(iv%beg)%sf, 1), &
-+                 & size(q_prim_qp%vf(iv%beg)%sf, 2), is3_viscous%beg, is3_viscous%end, iy%beg, iy%end, &
-+                 & is1_viscous%beg, is1_viscous%end, is1_viscous%beg + 1, is1_viscous%end - 1)
-+            else
-+            #endif
-             $:GPU_PARALLEL_LOOP(collapse=3)
-             do l = is3_viscous%beg, is3_viscous%end
-                 do k = iy%beg, iy%end
-@@ -410,9 +432,27 @@ contains
-                 end do
-             end do
-             $:END_GPU_PARALLEL_LOOP()
-+            #if defined(MFC_DACE)
-+            end if
-+            #endif
- 
-             if (n > 0) then
-                 #:if not MFC_CASE_OPTIMIZATION or num_dims > 1
-+                    #if defined(MFC_DACE)
-+                    if (visc_family_enabled(2) .and. visc_family_contract()) then
-+                    call s_dace_visc_grad_d1(y_cc(0:), q_prim_qp%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                         & q_prim_qp%vf(iv%beg + 1)%sf(0:, 0:, 0:), q_prim_qp%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                         & dqL_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                         & dqL_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                         & dqL_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                         & dqR_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                         & dqR_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                         & dqR_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), size(q_prim_qp%vf(iv%beg)%sf, 1), &
-+                         & size(q_prim_qp%vf(iv%beg)%sf, 2), is3_viscous%beg, is3_viscous%end, is2_viscous%beg, &
-+                         & is2_viscous%end, is1_viscous%beg, is1_viscous%end, is2_viscous%beg + 1, &
-+                         & is2_viscous%end - 1)
-+                    else
-+                    #endif
-                     $:GPU_PARALLEL_LOOP(collapse=3)
-                     do l = is3_viscous%beg, is3_viscous%end
-                         do j = is2_viscous%beg + 1, is2_viscous%end
-@@ -440,7 +480,33 @@ contains
-                         end do
-                     end do
-                     $:END_GPU_PARALLEL_LOOP()
--
-+                    #if defined(MFC_DACE)
-+                    end if
-+                    #endif
-+
-+                    ! The two level-2 x-gradient face averages, one fused kernel (the TU generator is
-+                    ! scripts/visc_avg_tu_gen.py).  They are the pair of the eighteen s_get_viscous
-+                    ! loops that share a shape exactly -- same ranges, same stencil on the SECOND
-+                    ! storage subscript -- which is why these two fuse and the other sixteen do not.
-+                    #if defined(MFC_DACE)
-+                    if (visc_avg_dir_enabled(1) .and. visc_avg_contract()) then
-+                        call s_dace_visc_avg_x(dqL_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dx_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dx_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dx_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dx_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dx_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dx_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & size(dqL_prim_dx_n(1)%vf(iv%beg)%sf, 1), &
-+                             & size(dqL_prim_dx_n(1)%vf(iv%beg)%sf, 2), is1_viscous%beg, is1_viscous%end, &
-+                             & is2_viscous%beg, is2_viscous%end, is3_viscous%beg, is3_viscous%end)
-+                    else
-+                    #endif
-                     $:GPU_PARALLEL_LOOP(collapse=3)
-                     do l = is3_viscous%beg, is3_viscous%end
-                         do j = is2_viscous%beg + 1, is2_viscous%end
-@@ -474,7 +540,29 @@ contains
-                         end do
-                     end do
-                     $:END_GPU_PARALLEL_LOOP()
--
-+                    #if defined(MFC_DACE)
-+                    end if
-+                    #endif
-+
-+                    #if defined(MFC_DACE)
-+                    if (visc_family_enabled(1) .and. visc_family_contract()) then
-+                    call s_dace_visc_avg_d0(dqL_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                         & dqL_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                         & dqL_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                         & dqR_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                         & dqR_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                         & dqR_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                         & dqL_prim_dy_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                         & dqL_prim_dy_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                         & dqL_prim_dy_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                         & dqR_prim_dy_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                         & dqR_prim_dy_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                         & dqR_prim_dy_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                         & size(dqL_prim_dy_n(2)%vf(iv%beg)%sf, 1), size(dqL_prim_dy_n(2)%vf(iv%beg)%sf, 2), &
-+                         & is3_viscous%beg, is3_viscous%end, is2_viscous%beg + 1, is2_viscous%end - 1, &
-+                         & is1_viscous%beg, is1_viscous%end, is1_viscous%beg + 1, is1_viscous%end - 1)
-+                    else
-+                    #endif
-                     $:GPU_PARALLEL_LOOP(collapse=3)
-                     do l = is3_viscous%beg, is3_viscous%end
-                         do k = is2_viscous%beg + 1, is2_viscous%end - 1
-@@ -508,10 +596,29 @@ contains
-                         end do
-                     end do
-                     $:END_GPU_PARALLEL_LOOP()
-+                    #if defined(MFC_DACE)
-+                    end if
-+                    #endif
-                 #:endif
- 
-                 if (p > 0) then
-                     #:if not MFC_CASE_OPTIMIZATION or num_dims > 2
-+                        #if defined(MFC_DACE)
-+                        if (visc_family_enabled(3) .and. visc_family_contract()) then
-+                        call s_dace_visc_grad_d2(z_cc(0:), q_prim_qp%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & q_prim_qp%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & q_prim_qp%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & size(q_prim_qp%vf(iv%beg)%sf, 1), size(q_prim_qp%vf(iv%beg)%sf, 2), &
-+                             & is3_viscous%beg, is3_viscous%end, is2_viscous%beg, is2_viscous%end, &
-+                             & is1_viscous%beg, is1_viscous%end, is3_viscous%beg + 1, is3_viscous%end - 1)
-+                        else
-+                        #endif
-                         $:GPU_PARALLEL_LOOP(collapse=3)
-                         do j = is3_viscous%beg + 1, is3_viscous%end
-                             do l = is2_viscous%beg, is2_viscous%end
-@@ -539,7 +646,30 @@ contains
-                             end do
-                         end do
-                         $:END_GPU_PARALLEL_LOOP()
--
-+                        #if defined(MFC_DACE)
-+                        end if
-+                        #endif
-+
-+                        #if defined(MFC_DACE)
-+                        if (visc_family_enabled(1) .and. visc_family_contract()) then
-+                        call s_dace_visc_avg_d0(dqL_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dz_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dz_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dz_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dz_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dz_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dz_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & size(dqL_prim_dz_n(3)%vf(iv%beg)%sf, 1), &
-+                             & size(dqL_prim_dz_n(3)%vf(iv%beg)%sf, 2), is3_viscous%beg + 1, &
-+                             & is3_viscous%end - 1, is2_viscous%beg, is2_viscous%end, is1_viscous%beg, &
-+                             & is1_viscous%end, is1_viscous%beg + 1, is1_viscous%end - 1)
-+                        else
-+                        #endif
-                         $:GPU_PARALLEL_LOOP(collapse=3)
-                         do l = is3_viscous%beg + 1, is3_viscous%end - 1
-                             do k = is2_viscous%beg, is2_viscous%end
-@@ -575,7 +705,32 @@ contains
-                             end do
-                         end do
-                         $:END_GPU_PARALLEL_LOOP()
--
-+                        #if defined(MFC_DACE)
-+                        end if
-+                        #endif
-+
-+                        ! The two level-2 z-gradient face averages -- the z twin of the x pair above.
-+                        ! Same shape, same y-face stencil; the swept axis moves to l and the level it
-+                        ! reads is 3 rather than 1 (which the CALLER supplies; the TU is identical).
-+                        #if defined(MFC_DACE)
-+                        if (visc_avg_dir_enabled(2) .and. visc_avg_contract()) then
-+                            call s_dace_visc_avg_z(dqL_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                                 & dqL_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                                 & dqL_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                                 & dqR_prim_dz_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                                 & dqR_prim_dz_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                                 & dqR_prim_dz_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                                 & dqL_prim_dz_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                                 & dqL_prim_dz_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                                 & dqL_prim_dz_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                                 & dqR_prim_dz_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                                 & dqR_prim_dz_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                                 & dqR_prim_dz_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                                 & size(dqL_prim_dz_n(3)%vf(iv%beg)%sf, 1), &
-+                                 & size(dqL_prim_dz_n(3)%vf(iv%beg)%sf, 2), is1_viscous%beg, is1_viscous%end, &
-+                                 & is2_viscous%beg, is2_viscous%end, is3_viscous%beg, is3_viscous%end)
-+                        else
-+                        #endif
-                         $:GPU_PARALLEL_LOOP(collapse=3)
-                         do l = is3_viscous%beg + 1, is3_viscous%end - 1
-                             do j = is2_viscous%beg + 1, is2_viscous%end
-@@ -610,7 +765,30 @@ contains
-                             end do
-                         end do
-                         $:END_GPU_PARALLEL_LOOP()
--
-+                        #if defined(MFC_DACE)
-+                        end if
-+                        #endif
-+
-+                        #if defined(MFC_DACE)
-+                        if (visc_family_enabled(3) .and. visc_family_contract()) then
-+                        call s_dace_visc_avg_d2(dqL_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dy_n(2)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dy_n(2)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dy_n(2)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dy_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dy_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dy_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dy_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dy_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dy_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & size(dqL_prim_dy_n(2)%vf(iv%beg)%sf, 1), &
-+                             & size(dqL_prim_dy_n(2)%vf(iv%beg)%sf, 2), is3_viscous%beg, is3_viscous%end, &
-+                             & is2_viscous%beg + 1, is2_viscous%end - 1, is1_viscous%beg, is1_viscous%end, &
-+                             & is3_viscous%beg + 1, is3_viscous%end - 1)
-+                        else
-+                        #endif
-                         $:GPU_PARALLEL_LOOP(collapse=3)
-                         do j = is3_viscous%beg + 1, is3_viscous%end
-                             do l = is2_viscous%beg + 1, is2_viscous%end - 1
-@@ -645,6 +823,29 @@ contains
-                             end do
-                         end do
-                         $:END_GPU_PARALLEL_LOOP()
-+                        #if defined(MFC_DACE)
-+                        end if
-+                        #endif
-+                        #if defined(MFC_DACE)
-+                        if (visc_family_enabled(3) .and. visc_family_contract()) then
-+                        call s_dace_visc_avg_d2(dqL_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dx_n(1)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dx_n(1)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dx_n(1)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dx_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dx_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqL_prim_dx_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dx_n(3)%vf(iv%beg + 0)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dx_n(3)%vf(iv%beg + 1)%sf(0:, 0:, 0:), &
-+                             & dqR_prim_dx_n(3)%vf(iv%beg + 2)%sf(0:, 0:, 0:), &
-+                             & size(dqL_prim_dx_n(1)%vf(iv%beg)%sf, 1), &
-+                             & size(dqL_prim_dx_n(1)%vf(iv%beg)%sf, 2), is3_viscous%beg, is3_viscous%end, &
-+                             & is2_viscous%beg, is2_viscous%end, is1_viscous%beg + 1, is1_viscous%end - 1, &
-+                             & is3_viscous%beg + 1, is3_viscous%end - 1)
-+                        else
-+                        #endif
-                         $:GPU_PARALLEL_LOOP(collapse=3)
-                         do j = is3_viscous%beg + 1, is3_viscous%end
-                             do l = is2_viscous%beg, is2_viscous%end
-@@ -678,11 +879,31 @@ contains
-                             end do
-                         end do
-                         $:END_GPU_PARALLEL_LOOP()
--
-+                        #if defined(MFC_DACE)
-+                        end if
-+                        #endif
-+
-+                        #if defined(MFC_DACE) && !defined(MFC_DACE_FDIFF_OFF)
-+                        ! P2/T2.3: the DaCe-compiled fused fd-gradient kernel
-+                        ! (device-resident, casopt-baked 5-eq/2-fluid/3-D,
-+                        ! buff_size=2).  Covers the same interior stencil as
-+                        ! the three s_compute_fd_gradient GPU loops, fused
-+                        ! over the iv field range, one launch instead of
-+                        ! iv%end-iv%beg+1.  The shim stages DEVICE-RESIDENT:
-+                        ! it transposes the declare-created device fields
-+                        ! straight into the kernel's flat staging buffers with
-+                        ! acc kernels — no host staging, no acc update here.
-+                        call s_dace_fd_gradient(q_prim_qp%vf(iv%beg:iv%end), &
-+                                                & dq_prim_dx_qp(1)%vf(iv%beg:iv%end), &
-+                                                & dq_prim_dy_qp(1)%vf(iv%beg:iv%end), &
-+                                                & dq_prim_dz_qp(1)%vf(iv%beg:iv%end), &
-+                                                & iv%end - iv%beg + 1)
-+                        #else
-                         do i = iv%beg, iv%end
-                             call s_compute_fd_gradient(q_prim_qp%vf(i), dq_prim_dx_qp(1)%vf(i), dq_prim_dy_qp(1)%vf(i), &
-                                                        & dq_prim_dz_qp(1)%vf(i))
-                         end do
-+                        #endif
-                     #:endif
-                 else
-                     do i = iv%beg, iv%end
-diff --git a/src/simulation/m_weno.fpp b/src/simulation/m_weno.fpp
-index ef18917a..ddae6858 100644
---- a/src/simulation/m_weno.fpp
-+++ b/src/simulation/m_weno.fpp
-@@ -15,6 +15,36 @@ module m_weno
-     use m_nvtx
- 
-     private; public :: s_initialize_weno_module, s_finalize_weno_module, s_weno, s_pack_weno_input_arr
-+    !> The fused sweep dispatch (M1, MFC_DACE_FUSED) reconstructs both Riemann
-+    !! states inside the HLLC kernel, so it reads the primitive buffer and the
-+    !! WENO coefficient tables in place.  They live here, and the DaCe WENO
-+    !! dispatch receives them as arguments from inside this module -- the fused
-+    !! one is called from m_riemann_solver_hllc, so they have to be public.
-+    public :: v_rs_weno, poly_coef_cbL_x, poly_coef_cbR_x, d_cbL_x, d_cbR_x, &
-+              poly_coef_cbL_y, poly_coef_cbR_y, d_cbL_y, d_cbR_y, &
-+              poly_coef_cbL_z, poly_coef_cbR_z, d_cbL_z, d_cbR_z
-+    !> M4 (WENO3): the smoothness-indicator coefficients.  WENO5 computes beta analytically inside the
-+    !! kernel and never needs these; the WENO3 body reads them from a table, so the WENO3 fused
-+    !! dispatch needs them here too.  Already device-resident (GPU_DECLARE + the GPU_UPDATE in
-+    !! s_initialize_weno), so the shim resolves them with acc_deviceptr like the other tables.
-+    public :: beta_coef_x, beta_coef_y, beta_coef_z
-+
-+    !> M1 fused sweep: which directions this step's reconstruction was skipped for
-+    !! because the fused HLLC kernel does it (see the dispatch in s_weno).  Read by
-+    !! m_riemann_solver_hllc, so both sites act on one verdict.
-+    logical, dimension(3) :: dace_fused_weno_active = [.false., .false., .false.]
-+    public :: dace_fused_weno_active
-+
-+    !> M4 fused WENO3: the same verdict for the weno_order == 3 family, which is a separate
-+    !! library set (a library serves one weno_order) and therefore only exists in a build
-+    !! configured for it.  Outside such a build this is a constant .false., so the guard sites
-+    !! below can name it unconditionally without dragging the shim into the link.
-+#if defined(MFC_DACE_WENO3)
-+    logical, dimension(3) :: dace_fused3_weno_active = [.false., .false., .false.]
-+#else
-+    logical, parameter, dimension(3) :: dace_fused3_weno_active = [.false., .false., .false.]
-+#endif
-+    public :: dace_fused3_weno_active
- 
-     !> @name The cell-average variables that will be WENO-reconstructed unpacked into an array for performance
-     !> @{
-@@ -912,6 +942,15 @@ contains
-     !> Perform WENO reconstruction of left and right cell-boundary values from cell-averaged variables
-     subroutine s_weno(v_vf, vL_rs_vf_x, vR_rs_vf_x, weno_dir, is1_weno_d, is2_weno_d, is3_weno_d)
+--- a/src/common/m_boundary_common.fpp
++++ b/src/common/m_boundary_common.fpp
+@@ -119,6 +119,10 @@
+     !! the per-cell BC routines over the boundary face.
+     impure subroutine s_populate_bc_direction(bc_dir, bc_loc, bc_bounds, bc_type_edge, q_prim_vf, pb_in, mv_in, q_T_sf)
  
 +#if defined(MFC_DACE)
-+        use m_dace_kernels_weno, only: s_dace_weno_x, s_dace_weno_y, &
-+                                       & s_dace_weno_z, weno_dace_contract, &
-+                                       & weno_dace_mode, weno_dace_dirs
-+        use m_dace_kernels_fused, only: dace_fused_contract, dace_fused_dirs
-+#if defined(MFC_DACE_WENO3)
-+        use m_dace_kernels_fused3, only: dace_fused3_contract, dace_fused3_dirs
++        use m_dace_kernels_periodic, only: s_dace_periodic, periodic_dace_enabled, &
++                                         & periodic_dace_contract
 +#endif
-+#endif
-         type(scalar_field), dimension(1:), intent(in)                                          :: v_vf
-         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vL_rs_vf_x
-         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vR_rs_vf_x
-@@ -994,6 +1033,19 @@ contains
-             call s_pack_weno_input_arr(v_vf)
+         integer, intent(in) :: bc_dir, bc_loc
+         type(int_bounds_info), intent(in) :: bc_bounds
+         type(integer_field), intent(in) :: bc_type_edge
+@@ -148,6 +152,30 @@
+             k_beg = -buff_size; k_end = m + buff_size; l_beg = -buff_size; l_end = n + buff_size
          end if
  
-+#if defined(MFC_DACE) && defined(MFC_DACE_WENO3)
-+        !> M4 fused WENO3: the verdict for the weno_order == 3 family.  It is order-generic, so it
-+        !! is set HERE -- before the order split -- for whichever direction this call handles.
-+        !! M1's verdict lives inside the weno_order == 5 branch; putting the WENO3 one there made it
-+        !! unreachable for a WENO3 case (and the gate then passed vacuously, which is how it was
-+        !! caught).  No `weno_dace_contract()` clause: that requires weno_order == 5 by design.
-+        if (weno_dir >= 1 .and. weno_dir <= 3) then
-+            dace_fused3_weno_active(weno_dir) = &
-+                & dace_fused3_dirs(weno_dir) .and. dace_fused3_contract() .and. &
-+                & v_size == 8 .and. uniform_grid(weno_dir)
++#if defined(MFC_DACE)
++        ! The fused periodic kernel, when the WHOLE edge is BC_PERIODIC: the per-cell select below
++        ! then always takes the same branch and the loop reduces to s_periodic -- a pure index remap,
++        ! which is what the DaCe kernel implements (one flattened loop, no BC table).
++        !
++        ! The edge's code derives from the face's bc_* scalar, so testing the scalar is the dispatch
++        ! condition; a case that overrides individual cells of an edge through bc_type_edge would
++        ! bypass this check and must not use the switch.  `bc_loc` is -1 for %beg.
++        if (periodic_dace_enabled(bc_dir) .and. periodic_dace_contract()) then
++            if ((bc_dir == 1 .and. bc_loc == -1 .and. bc_x%beg == BC_PERIODIC) .or. &
++                & (bc_dir == 1 .and. bc_loc /= -1 .and. bc_x%end == BC_PERIODIC) .or. &
++                & (bc_dir == 2 .and. bc_loc == -1 .and. bc_y%beg == BC_PERIODIC) .or. &
++                & (bc_dir == 2 .and. bc_loc /= -1 .and. bc_y%end == BC_PERIODIC) .or. &
++                & (bc_dir == 3 .and. bc_loc == -1 .and. bc_z%beg == BC_PERIODIC) .or. &
++                & (bc_dir == 3 .and. bc_loc /= -1 .and. bc_z%end == BC_PERIODIC)) then
++                call s_dace_periodic(bc_dir, bc_loc, q_prim_vf(1)%sf, q_prim_vf(2)%sf, &
++                                     & q_prim_vf(3)%sf, q_prim_vf(4)%sf, q_prim_vf(5)%sf, &
++                                     & q_prim_vf(6)%sf, q_prim_vf(7)%sf, q_prim_vf(8)%sf, &
++                                     & k_beg, k_end, l_beg, l_end)
++                return
++            end if
 +        end if
 +#endif
 +
-         if (weno_order == 3) then
-             #:for WENO_DIR, XYZ, STENCIL_VAR, COORDS, X_BND, Y_BND, Z_BND in &
-                     [(1, 'x', 'j', '{STENCIL_IDX}, k, l', 'is1_weno', 'is2_weno', 'is3_weno'), &
-@@ -1093,6 +1145,51 @@ contains
-                     #:set SV = STENCIL_VAR
-                     #:set SF = lambda offs: COORDS.format(STENCIL_IDX = SV + offs)
-                     if (weno_dir == ${WENO_DIR}$) then
-+#if defined(MFC_DACE)
-+                        !> M1 fused sweep: when the fused kernel will do this direction's
-+                        !! reconstruction inside the HLLC solve, the reconstruction here is
-+                        !! skipped entirely -- its vL/vR outputs have no consumer on that
-+                        !! path.  The decision is published (not re-derived) because
-+                        !! m_riemann_solver_hllc must reach the SAME verdict: a WENO that
-+                        !! skipped while the fused call did not happen would leave the
-+                        !! Riemann states stale.  v_size (this module's private state) and
-+                        !! uniform_grid are part of it for that reason.
-+                        dace_fused_weno_active(${WENO_DIR}$) = &
-+                            & dace_fused_dirs(${WENO_DIR}$) .and. dace_fused_contract() .and. &
-+                            & weno_dace_contract() .and. v_size == 8 .and. &
-+                            & uniform_grid(${WENO_DIR}$)
-+#endif
-+#if defined(MFC_DACE) && !defined(MFC_DACE_WENO_OFF)
-+                        if (.not. dace_fused_weno_active(${WENO_DIR}$) .and. &
-+                            & .not. dace_fused3_weno_active(${WENO_DIR}$) .and. &
-+                            & weno_dace_dirs(${WENO_DIR}$) .and. &
-+                            & weno_dace_mode() >= 1 .and. weno_dace_contract() .and. &
-+                            & v_size == 8 .and. uniform_grid(${WENO_DIR}$)) then
-+                            #:if WENO_DIR == 1
-+                            call s_dace_weno_x(v_rs_weno, poly_coef_cbL_x, poly_coef_cbR_x, &
-+                                               & d_cbL_x, d_cbR_x, vL_rs_vf_x, vR_rs_vf_x, &
-+                                               & is1_weno%beg, is1_weno%end, is2_weno%beg, &
-+                                               & is2_weno%end, is3_weno%beg, is3_weno%end)
-+                            #:elif WENO_DIR == 2
-+                            call s_dace_weno_y(v_rs_weno, poly_coef_cbL_y, poly_coef_cbR_y, &
-+                                               & d_cbL_y, d_cbR_y, vL_rs_vf_x, vR_rs_vf_x, &
-+                                               & is2_weno%beg, is2_weno%end, is1_weno%beg, &
-+                                               & is1_weno%end, is3_weno%beg, is3_weno%end)
-+                            #:else
-+                            call s_dace_weno_z(v_rs_weno, poly_coef_cbL_z, poly_coef_cbR_z, &
-+                                               & d_cbL_z, d_cbR_z, vL_rs_vf_x, vR_rs_vf_x, &
-+                                               & is3_weno%beg, is3_weno%end, is2_weno%beg, &
-+                                               & is2_weno%end, is1_weno%beg, is1_weno%end)
-+                            #:endif
-+                        end if
-+                        if (.not. dace_fused_weno_active(${WENO_DIR}$) .and. &
-+                            & .not. dace_fused3_weno_active(${WENO_DIR}$) .and. &
-+                            & .not. (weno_dace_dirs(${WENO_DIR}$) .and. &
-+                                   & weno_dace_mode() == 1 .and. weno_dace_contract() .and. &
-+                                   & v_size == 8 .and. uniform_grid(${WENO_DIR}$))) then
-+#else
-+                        if (.true.) then
-+#endif
-                         $:GPU_PARALLEL_LOOP(collapse=3,private='[dvd, poly, beta, alpha, omega, tau, delta, q, vp0, vm1, vm2, &
-                                             & vp1, vp2]')
-                         do l = ${Z_BND}$%beg, ${Z_BND}$%end
-@@ -1235,6 +1332,7 @@ contains
-                             end do
-                         end do
-                         $:END_GPU_PARALLEL_LOOP()
-+                        end if
+         $:GPU_PARALLEL_LOOP(private='[l, k, bc_code]', collapse=2)
+         do l = l_beg, l_end
+             do k = k_beg, k_end
+--- a/src/common/m_mpi_common.fpp
++++ b/src/common/m_mpi_common.fpp
+@@ -14,6 +14,9 @@
  
-                         if (mp_weno) then
-                             call s_preserve_monotonicity(v_rs_weno, vL_rs_vf_x, vR_rs_vf_x, weno_dir)
+     use m_derived_types
+     use m_global_parameters
++#if defined(MFC_DACE)
++    use m_dace_kernels_pack, only: s_dace_pack_send
++#endif
+     use m_helper
+     use ieee_arithmetic
+     use m_nvtx
+@@ -636,6 +639,26 @@
+         #:for mpi_dir in [1, 2, 3]
+             if (mpi_dir == ${mpi_dir}$) then
+                 #:if mpi_dir == 1
++#if defined(MFC_DACE) && !defined(MFC_DACE_PACK_OFF)
++                    ! P2/T2.3: the DaCe-compiled dir-1 plain halo-pack kernel
++                    ! (T2.2 TU, buff_size/nVar baked, pack_offset runtime).
++                    ! The shim unpacks into HOST buff_send; the caller-side
++                    ! acc update device makes it visible to the
++                    ! GPU_HOST_DATA(use_device_addr) sendrecv below.  The
++                    ! chem/qbmm extras and any nVar mismatch keep the OpenACC
++                    ! loop.  q_comm is declare-create'd (device-resident in
++                    ! the OpenACC build), so the input stages via acc update
++                    ! host.
++                    if (.not. chem_diff_comm .and. .not. qbmm_comm .and. nVar == 8) then
++                        ! The shim stages DEVICE-RESIDENT: an acc-kernel
++                        ! transpose packs the declare-created device q_comm
++                        ! straight into the kernel buffer, and the packed
++                        ! result lands in the device buff_send via a
++                        ! device-to-device copy — no host staging, no acc
++                        ! update here.
++                        call s_dace_pack_send(q_comm(1:nVar), buff_send, pack_offset)
++                    else
++#endif
+                     $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
+                     do l = 0, p
+                         do k = 0, n
+@@ -648,6 +671,9 @@
+                         end do
+                     end do
+                     $:END_GPU_PARALLEL_LOOP()
++#if defined(MFC_DACE) && !defined(MFC_DACE_PACK_OFF)
++                    end if
++#endif
+ 
+                     if (chem_diff_comm) then
+                         $:GPU_PARALLEL_LOOP(collapse=3,private='[r]')
