@@ -119,6 +119,10 @@ contains
     !! the per-cell BC routines over the boundary face.
     impure subroutine s_populate_bc_direction(bc_dir, bc_loc, bc_bounds, bc_type_edge, q_prim_vf, pb_in, mv_in, q_T_sf)
 
+#if defined(MFC_DACE)
+        use m_dace_kernels_periodic, only: s_dace_periodic, periodic_dace_enabled, &
+                                         & periodic_dace_contract
+#endif
         integer, intent(in) :: bc_dir, bc_loc
         type(int_bounds_info), intent(in) :: bc_bounds
         type(integer_field), intent(in) :: bc_type_edge
@@ -147,6 +151,42 @@ contains
         else
             k_beg = -buff_size; k_end = m + buff_size; l_beg = -buff_size; l_end = n + buff_size
         end if
+
+#if defined(MFC_DACE)
+        ! The fused periodic kernel, when the WHOLE edge is BC_PERIODIC: the per-cell select below
+        ! then always takes the same branch and the loop reduces to s_periodic -- a pure index remap,
+        ! which is what the DaCe kernel implements (one flattened loop, no BC table).
+        !
+        ! The edge's code derives from the face's bc_* scalar, so testing the scalar is the dispatch
+        ! condition; a case that overrides individual cells of an edge through bc_type_edge would
+        ! bypass this check and must not use the switch.  `bc_loc` is -1 for %beg.
+        block
+            character(len=8) :: pb_dbg
+            integer :: pb_st
+            logical, save :: pb_done(3, 2) = .false.
+            call get_environment_variable('MFC_DACE_PERIODIC_DBG', pb_dbg, status=pb_st)
+            if (pb_st == 0 .and. len_trim(pb_dbg) > 0 .and. .not. pb_done(bc_dir, merge(1, 2, bc_loc == -1))) then
+                pb_done(bc_dir, merge(1, 2, bc_loc == -1)) = .true.
+                print '(A,I0,A,I2,A,L1,A,L1,A,I0,A,I0,A,I0,A,L1)', 'PER-DBG dir=', bc_dir, ' loc=', bc_loc, &
+                    & ' enabled=', periodic_dace_enabled(bc_dir), ' contract=', periodic_dace_contract(), &
+                    & ' sys=', sys_size, ' buff=', buff_size, ' ndim=', num_dims, ' bxbeg=', bc_x%beg == BC_PERIODIC
+            end if
+        end block
+        if (periodic_dace_enabled(bc_dir) .and. periodic_dace_contract()) then
+            if ((bc_dir == 1 .and. bc_loc == -1 .and. bc_x%beg == BC_PERIODIC) .or. &
+                & (bc_dir == 1 .and. bc_loc /= -1 .and. bc_x%end == BC_PERIODIC) .or. &
+                & (bc_dir == 2 .and. bc_loc == -1 .and. bc_y%beg == BC_PERIODIC) .or. &
+                & (bc_dir == 2 .and. bc_loc /= -1 .and. bc_y%end == BC_PERIODIC) .or. &
+                & (bc_dir == 3 .and. bc_loc == -1 .and. bc_z%beg == BC_PERIODIC) .or. &
+                & (bc_dir == 3 .and. bc_loc /= -1 .and. bc_z%end == BC_PERIODIC)) then
+                call s_dace_periodic(bc_dir, bc_loc, q_prim_vf(1)%sf, q_prim_vf(2)%sf, &
+                                     & q_prim_vf(3)%sf, q_prim_vf(4)%sf, q_prim_vf(5)%sf, &
+                                     & q_prim_vf(6)%sf, q_prim_vf(7)%sf, q_prim_vf(8)%sf, &
+                                     & k_beg, k_end, l_beg, l_end)
+                return
+            end if
+        end if
+#endif
 
         $:GPU_PARALLEL_LOOP(private='[l, k, bc_code]', collapse=2)
         do l = l_beg, l_end
